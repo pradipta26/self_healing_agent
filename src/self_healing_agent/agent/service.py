@@ -1,29 +1,38 @@
-import re
+# self_healing_agent/src/self_healing_agent/agent/service.py
 import json
 from typing import Any
+import uuid
+from datetime import datetime, timezone
 
 from self_healing_agent.agent.graph import build_graph
 from self_healing_agent.core.models import IncidentPayload
 from self_healing_agent.agent.state import AgentState
 
 def run_incident(payload: IncidentPayload) -> dict[str, Any]:
-    state = AgentState()
-    state['incident_raw'] = payload.incident_details
+    state: AgentState = {
+        "trace_id": str(uuid.uuid4()),
+        "incident_id": str(uuid.uuid4()),
+        "incident_raw": payload.incident_details,
+        "warnings": [],
+        "trace": [],
+        "error_flag": False,
+        "error_message": None,
+        "event_ids": [],
+        "autonomy_mode": "SHADOW",
+        "kill_switch_state": "DISABLED",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat()
+    }
     graph = build_graph()
     response = graph.invoke(state)
-    
-    return {
-        "status": "processed",
-        "response": response,
-    }
+    return response
 
 
 def _quick_test_main() -> None:
     samples = [
-        (
-            "Host Infra",
-            """System: UVWX , DC: AWS-W , MetricName: Server CPU % , Application: UVWX-ONE SEARCH-INFRA for host: host.my-domain.com , Instance: host.my-domain.com has Server CPU % >= 99.0"""
-        ),
+        # (
+        #     "Host Infra",
+        #     """System: UVWX , DC: AWS-W , MetricName: Server CPU % , Application: UVWX-ONE SEARCH-INFRA for host: host.my-domain.com , Instance: host.my-domain.com has Server CPU % >= 99.0"""
+        # ),
         # (
         #     "Host Infra",
         #     "System: MNOP , DC: AWS-W , MetricName: jvm mismatch , Application: MNOP-MNOP-JVM-STATUS for host: AWS-W MCS PNO-MNOP JVM Status Mismatch, 6 missing, 2 extra MNOP-BATCH-CASSANDRAREALTIME-PRD-AW2:MNOP-BATCH-CASSANDRAREALTIME-PRD-AW2 = missing, WLS-MNOP-CXPNOB2-AW2:host.my-domain.com:CXP_PNO_B2C:Server1:13001 = missing, WLS-MNOP-CXPNOB2-AW2:host.my-domain.com:CXP_PNO_B2C:Server3:13003 = missing, WLS-MNOP-CXPNOB2-AW2:host.my-domain.com:DVS_PNO_B2C:Server3:13003 = missing, Instance: Reference List: AWS-West.PNO_JVMList has jvm mismatch >= 0.0",
@@ -32,10 +41,10 @@ def _quick_test_main() -> None:
         #     "Host Infra",
         #     """System: YZAB , DC: TDC , MetricName: /log usage , Application: YZAB-SCMDATA-INFRA for host: host.my-domain.com , Instance: host.my-domain.com:/log has /log usage >= 96.0"""
         # ),
-        # (
-        #     "Host Infra",
-        #     "System: QRST , DC: SDC , MetricName: /var/adm/WebSphere usage , Application: QRST-DVS-INFRA for host: host.my-domain.com , Instance: host.my-domain.com:/var/adm/WebSphere has /var/adm/WebSphere usage >= 92.0",
-        # ),
+        (
+            "Host Infra",
+            "System: QRST , DC: SDC , MetricName: /var/adm/WebSphere usage , Application: QRST-DVS-INFRA for host: host.my-domain.com , Instance: host.my-domain.com:/var/adm/WebSphere has /var/adm/WebSphere usage >= 92.0",
+        ),
         # (
         #     "Service DC",
         #     "Reason: 300% more traffic is observed compared to past window average traffic - 8188.0 System: BVHV, DC: SDC, MetricName: Traffic, Application: BVHV-SAFEGUARD-SSOIGSTREAMPROCESSING"
@@ -87,9 +96,10 @@ def _quick_test_main() -> None:
 
     for idx, (label, details) in enumerate(samples, start=1):
         payload = IncidentPayload(incident_details=details)
-        result = run_incident(payload)
+        state: AgentState = run_incident(payload)
+        print(f"state keys: {list(state.keys())}")
         print(f"\n[{idx}] {label}")
-        print(json.dumps(result, indent=2))
+        print(json.dumps(state, indent=2))
 
 
 if __name__ == "__main__":
