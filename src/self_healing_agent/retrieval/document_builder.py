@@ -88,8 +88,8 @@ def _load_history_incidents(incident_id: str | None = None) -> list[dict[str, An
         List of incident records.
     """
     project_root = Path(__file__).resolve().parents[3]
-    #data_path = project_root / "data" / "synthetic_incident_history_records.json"
-    data_path = project_root / "data" / "synthetic_incident_history_records_testing.json"
+    data_path = project_root / "data" / "synthetic_incident_history_records.json"
+    #data_path = project_root / "data" / "synthetic_incident_history_records_testing.json"
     if not data_path.exists():
         raise FileNotFoundError(f"History file not found: {data_path}")
 
@@ -270,112 +270,96 @@ def _create_parent_incident_db_entries(enhanced_incidents: list[dict[str, Any]])
     
     return db_input_entries, error_entries
 
-def _create_incident_chunk_db_entries(enhanced_incidents: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """
-    Create database entries for the incident chunk table.
-    Builds one problem chunk and, when available, one resolution chunk per incident.
-    """
+
+def _create_parent_incident_db_entry(enhanced_incident: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_incident_id": enhanced_incident.get("incident_id"),
+        "source_system": "synthetic",
+        "incident_type": enhanced_incident.get("incident_type"),
+        "env": "PROD",
+        "service_domain": enhanced_incident.get("service_domain"),
+        "datacenter": enhanced_incident.get("datacenter"),
+        "app_name": enhanced_incident.get("app_name"),
+        "hosts": enhanced_incident.get("hosts"),
+        "reason": enhanced_incident.get("incident_reason"),
+        "metric_names": enhanced_incident.get("metric_names"),
+        "instances": enhanced_incident.get("instances"),
+        "instance_hosts": enhanced_incident.get("instance_hosts"),
+        "warnings": enhanced_incident.get("warnings"),
+        "raw_incident_text": enhanced_incident.get("incident_text_raw"),
+        "normalized_incident_reason": enhanced_incident.get("incident_reason_normalized"),
+        "resolution": enhanced_incident.get("closure_remarks", ""),
+        "payload_hash": enhanced_incident.get("normalized_reason_hash"),
+        "source_created_at": _parse_source_timestamp(enhanced_incident.get("created_date")),
+        "source_updated_at": _parse_source_timestamp(enhanced_incident.get("updated_date")),
+    }
+
+
+def _create_incident_chunk_db_entries_for_incident(
+    enhanced_incident: dict[str, Any],
+    parent_id: int,
+) -> list[dict[str, Any]]:
+    metric_names = enhanced_incident.get("metric_names") or []
+    metric_name = metric_names[0] if metric_names else ""
+
+    common_fields = {
+        "parent_id": parent_id,
+        "service_domain": enhanced_incident.get("service_domain"),
+        "metric_name": metric_name,
+        "datacenter": enhanced_incident.get("datacenter"),
+        "incident_type": enhanced_incident.get("incident_type"),
+        "app_name": enhanced_incident.get("app_name"),
+        "embedding_model": DEFAULT_EMBEDDING_MODEL,
+    }
 
     chunk_entries: list[dict[str, Any]] = []
-    error_entries: list[dict[str, Any]] = []
 
-    conn = None
-    cursor = None
-
-    try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5432"),
-            database=os.getenv("DB_NAME", "postgres"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "Suvra#10")
+    problem_text = (enhanced_incident.get("incident_reason") or "").strip()
+    problem_text_normalized = (enhanced_incident.get("incident_reason_normalized") or "").strip()
+    if problem_text and problem_text_normalized:
+        chunk_entries.append(
+            {
+                **common_fields,
+                "chunk_index": 1,
+                "chunk_type": "problem",
+                "chunk_text": problem_text,
+                "chunk_text_normalized": problem_text_normalized,
+                "embedding": embed_text(problem_text_normalized),
+            }
         )
-        cursor = conn.cursor()
 
-        for enhanced_incident in enhanced_incidents:
-            try:
-                source_incident_id = enhanced_incident.get("incident_id")
-                if not source_incident_id:
-                    raise ValueError("Missing incident_id for chunk creation")
+    resolution_text = (enhanced_incident.get("closure_remarks") or "").strip()
+    resolution_text_normalized = (enhanced_incident.get("closure_remarks_normalized") or "").strip()
+    if resolution_text and resolution_text_normalized:
+        chunk_entries.append(
+            {
+                **common_fields,
+                "chunk_index": 2,
+                "chunk_type": "resolution",
+                "chunk_text": resolution_text,
+                "chunk_text_normalized": resolution_text_normalized,
+                "embedding": embed_text(resolution_text_normalized),
+            }
+        )
+    import time
+    time.sleep(1)  # To respect rate limits of embedding API
+    return chunk_entries
 
-                cursor.execute(
-                    """
-                    SELECT id
-                    FROM prdb_incident_parent
-                    WHERE source_system = %s AND source_incident_id = %s
-                    LIMIT 1
-                    """,
-                    ("synthetic", source_incident_id),
-                )
-                parent_row = cursor.fetchone()
-                if not parent_row:
-                    raise ValueError(f"Parent incident not found for incident_id={source_incident_id}")
 
-                parent_id = parent_row[0]
-                metric_names = enhanced_incident.get("metric_names") or []
-                metric_name = metric_names[0] if metric_names else ""
+def _adapt_chunk_value(column: str, value: Any) -> Any:
+    if column == "embedding" and value is not None:
+        return "[" + ",".join(str(component) for component in value) + "]"
+    return value
 
-                common_fields = {
-                    "parent_id": parent_id,
-                    "service_domain": enhanced_incident.get("service_domain"),
-                    "metric_name": metric_name,
-                    "datacenter": enhanced_incident.get("datacenter"),
-                    "incident_type": enhanced_incident.get("incident_type"),
-                    "app_name": enhanced_incident.get("app_name"),
-                    "embedding_model": DEFAULT_EMBEDDING_MODEL,
-                }
 
-                problem_text = (enhanced_incident.get("incident_reason") or "").strip()
-                problem_text_normalized = (enhanced_incident.get("incident_reason_normalized") or "").strip()
-                if problem_text and problem_text_normalized:
-                    chunk_entries.append(
-                        {
-                            **common_fields,
-                            "chunk_index": 1,
-                            "chunk_type": "problem",
-                            "chunk_text": problem_text,
-                            "chunk_text_normalized": problem_text_normalized or problem_text,
-                            "embedding": embed_text(problem_text_normalized),
-                        }
-                    )
-
-                resolution_text = (enhanced_incident.get("closure_remarks") or "").strip()
-                resolution_text_normalized = (enhanced_incident.get("closure_remarks_normalized") or "").strip()
-                if resolution_text and resolution_text_normalized:
-                    chunk_entries.append(
-                        {
-                            **common_fields,
-                            "chunk_index": 2,
-                            "chunk_type": "resolution",
-                            "chunk_text": resolution_text,
-                            "chunk_text_normalized": resolution_text_normalized,
-                            "embedding": embed_text(resolution_text_normalized),
-                        }
-                    )
-
-            except Exception as exc:  # noqa: BLE001
-                error_entries.append(
-                    {
-                        "incident_id": enhanced_incident.get("incident_id"),
-                        "error": "CHUNK_DB_ENTRY_CREATION_FAILED",
-                        "error_message": str(exc),
-                        "enhanced_incident": enhanced_incident,
-                    }
-                )
-
-    finally:
-        if cursor is not None:
-            try:
-                cursor.close()
-            except Exception:  # noqa: BLE001
-                pass
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:  # noqa: BLE001
-                pass
-
-    return chunk_entries, error_entries
+def _get_db_connection() -> psycopg2.extensions.connection:
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", "5432"),
+        database=os.getenv("DB_NAME", "postgres"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD", "Suvra#10")
+    )
 
 def _insert_into_parent_incident_db(db_entries: list[dict[str, Any]]) -> dict[str, Any]:
     """
@@ -506,116 +490,133 @@ def _insert_into_parent_incident_db(db_entries: list[dict[str, Any]]) -> dict[st
     
     return summary
 
-def _insert_into_incident_chunks_db(db_entries: list[dict[str, Any]]) -> dict[str, Any]:
-    """
-    Insert the given entries into the prdb_incident_chunk table.
-    Each entry represents either a problem chunk or a resolution chunk for an incident.
-    Processes each entry independently to ensure one failure does not stop the entire process.
-    
-    Args:
-        db_entries: List of database entry dictionaries for incident chunks.
-    Returns:
-        Summary dictionary with:
-        - total: Total number of entries
-        - successful: Number of successful inserts
-        - failed: Number of failed inserts
-        - failures: List of failure details with incident_id, error, and entry_index
-    """
-    # Main function to build documents for retrieval.
+
+def _insert_incidents_with_chunks_db(
+    conn: psycopg2.extensions.connection,
+    enhanced_incidents: list[dict[str, Any]],
+) -> dict[str, Any]:
     summary = {
-        "total": len(db_entries),
+        "total": len(enhanced_incidents),
         "successful": 0,
+        "skipped": 0,
         "failed": 0,
-        "failures": []
+        "parent_rows_inserted": 0,
+        "chunk_rows_inserted": 0,
+        "failures": [],
     }
-    
-    if not db_entries:
+
+    if not enhanced_incidents:
         return summary
 
-    def _adapt_chunk_value(column: str, value: Any) -> Any:
-        if column == "embedding" and value is not None:
-            return "[" + ",".join(str(component) for component in value) + "]"
-        return value
-
-    conn = None
     cursor = None
 
     try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=os.getenv("DB_PORT", "5432"),
-            database=os.getenv("DB_NAME", "postgres"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "Suvra#10")
-        )
         cursor = conn.cursor()
 
-        for idx, entry in enumerate(db_entries):
+        for idx, enhanced_incident in enumerate(enhanced_incidents):
+            incident_id = enhanced_incident.get("incident_id")
             try:
-                columns = list(entry.keys())
-                values = [_adapt_chunk_value(column, entry[column]) for column in columns]
+                parent_entry = _create_parent_incident_db_entry(enhanced_incident)
+                payload_hash = parent_entry.get("payload_hash")
 
-                insert_query = sql.SQL(
-                    "INSERT INTO prdb_incident_chunk ({}) VALUES ({}) "
-                    "ON CONFLICT (parent_id, chunk_index, chunk_type) DO UPDATE SET "
-                    "chunk_text = EXCLUDED.chunk_text, "
-                    "chunk_text_normalized = EXCLUDED.chunk_text_normalized, "
-                    "service_domain = EXCLUDED.service_domain, "
-                    "metric_name = EXCLUDED.metric_name, "
-                    "datacenter = EXCLUDED.datacenter, "
-                    "incident_type = EXCLUDED.incident_type, "
-                    "app_name = EXCLUDED.app_name, "
-                    "embedding = EXCLUDED.embedding, "
-                    "embedding_model = EXCLUDED.embedding_model"
+                if payload_hash:
+                    cursor.execute(
+                        "SELECT id FROM prdb_incident_parent WHERE payload_hash = %s LIMIT 1",
+                        (payload_hash,),
+                    )
+                    if cursor.fetchone():
+                        conn.rollback()
+                        summary["skipped"] += 1
+                        continue
+
+                parent_columns = list(parent_entry.keys())
+                parent_values = [parent_entry[column] for column in parent_columns]
+                parent_insert_query = sql.SQL(
+                    "INSERT INTO prdb_incident_parent ({}) VALUES ({}) "
+                    "ON CONFLICT (source_system, source_incident_id) DO UPDATE SET "
+                    "updated_at = NOW() "
+                    "RETURNING id"
                 ).format(
-                    sql.SQL(", ").join(map(sql.Identifier, columns)),
-                    sql.SQL(", ").join(sql.Placeholder() * len(columns))
+                    sql.SQL(", ").join(map(sql.Identifier, parent_columns)),
+                    sql.SQL(", ").join(sql.Placeholder() * len(parent_columns))
+                )
+                cursor.execute(parent_insert_query, parent_values)
+                parent_id = cursor.fetchone()[0]
+
+                chunk_entries = _create_incident_chunk_db_entries_for_incident(
+                    enhanced_incident=enhanced_incident,
+                    parent_id=parent_id,
                 )
 
-                cursor.execute(insert_query, values)
+                for chunk_entry in chunk_entries:
+                    chunk_columns = list(chunk_entry.keys())
+                    chunk_values = [
+                        _adapt_chunk_value(column, chunk_entry[column])
+                        for column in chunk_columns
+                    ]
+                    chunk_insert_query = sql.SQL(
+                        "INSERT INTO prdb_incident_chunk ({}) VALUES ({}) "
+                        "ON CONFLICT (parent_id, chunk_index, chunk_type) DO UPDATE SET "
+                        "chunk_text = EXCLUDED.chunk_text, "
+                        "chunk_text_normalized = EXCLUDED.chunk_text_normalized, "
+                        "service_domain = EXCLUDED.service_domain, "
+                        "metric_name = EXCLUDED.metric_name, "
+                        "datacenter = EXCLUDED.datacenter, "
+                        "incident_type = EXCLUDED.incident_type, "
+                        "app_name = EXCLUDED.app_name, "
+                        "embedding = EXCLUDED.embedding, "
+                        "embedding_model = EXCLUDED.embedding_model"
+                    ).format(
+                        sql.SQL(", ").join(map(sql.Identifier, chunk_columns)),
+                        sql.SQL(", ").join(sql.Placeholder() * len(chunk_columns))
+                    )
+                    cursor.execute(chunk_insert_query, chunk_values)
+
+                conn.commit()
                 summary["successful"] += 1
+                summary["parent_rows_inserted"] += 1
+                summary["chunk_rows_inserted"] += len(chunk_entries)
 
             except Exception as exc:  # noqa: BLE001
+                conn.rollback()
                 summary["failed"] += 1
                 summary["failures"].append({
-                    "parent_id": entry.get("parent_id"),
-                    "chunk_index": entry.get("chunk_index"),
-                    "chunk_type": entry.get("chunk_type"),
+                    "incident_id": incident_id,
                     "error": str(exc),
                     "error_type": type(exc).__name__,
                     "entry_index": idx,
                 })
-                continue
-
-        conn.commit()
 
     except psycopg2.OperationalError as exc:
-        summary["failed"] = len(db_entries)
+        summary["failed"] = len(enhanced_incidents)
         summary["successful"] = 0
+        summary["skipped"] = 0
+        summary["parent_rows_inserted"] = 0
+        summary["chunk_rows_inserted"] = 0
         summary["failures"].append({
             "error": f"Database connection failed: {str(exc)}",
             "error_type": "OperationalError",
-            "total_entries_not_processed": len(db_entries),
+            "total_entries_not_processed": len(enhanced_incidents),
         })
 
     except Exception as exc:  # noqa: BLE001
-        summary["failed"] = len(db_entries)
+        if conn is not None:
+            conn.rollback()
+        summary["failed"] = len(enhanced_incidents)
         summary["successful"] = 0
+        summary["skipped"] = 0
+        summary["parent_rows_inserted"] = 0
+        summary["chunk_rows_inserted"] = 0
         summary["failures"].append({
             "error": f"Unexpected database error: {str(exc)}",
             "error_type": type(exc).__name__,
-            "total_entries_not_processed": len(db_entries),
+            "total_entries_not_processed": len(enhanced_incidents),
         })
 
     finally:
         if cursor is not None:
             try:
                 cursor.close()
-            except Exception:  # noqa: BLE001
-                pass
-        if conn is not None:
-            try:
-                conn.close()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -626,7 +627,7 @@ def document_builder() -> dict[str, Any]:
     # Main function to build documents for retrieval.
     summary = {
         "normalization": {},
-        "db_insertion": {}
+        "db_insert": {}
     }
     
     try: 
@@ -638,27 +639,27 @@ def document_builder() -> dict[str, Any]:
     enhanced_incidents, error_incidents = _enhance_raw_json_incident(raw_incidents)
     print(f"enhanced incidents: {len(enhanced_incidents)} \n error incidents: {len(error_incidents)}")
 
-    parent_db_incident_entries, db_entry_errors = _create_parent_incident_db_entries(enhanced_incidents)
-    print(f"parent db entries: {len(parent_db_incident_entries)} (errors: {len(db_entry_errors)})")
-    
-    # Insert into database
-    summary["db_insertion"] = {}
-    parent_db_insertion_summary = _insert_into_parent_incident_db(parent_db_incident_entries)
-    summary["db_insertion"]["parent_insertion"] = parent_db_insertion_summary
-    print(f"\nDatabase Insertion Summary:")
-    print(f"  Total: {parent_db_insertion_summary['total']}")
-    print(f"  Successful: {parent_db_insertion_summary['successful']}")
-    print(f"  Skipped: {parent_db_insertion_summary['skipped']}")
-    print(f"  Failed: {parent_db_insertion_summary['failed']}")
-    if parent_db_insertion_summary['failures']:
-        print(f"  Failures: {json.dumps(parent_db_insertion_summary['failures'][:5], indent=2)}")
-    
+    conn = None
+    try:
+        conn = _get_db_connection()
+        db_insert_summary = _insert_incidents_with_chunks_db(conn, enhanced_incidents)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
 
-    #insert incident chunks
-    chunk_db_entries, chunk_db_entry_errors = _create_incident_chunk_db_entries(enhanced_incidents)
-    print(f"chunk db entries: {len(chunk_db_entries)} (errors: {len(chunk_db_entry_errors)})")
-    chunk_db_insertion_summary = _insert_into_incident_chunks_db(chunk_db_entries)
-    summary["db_insertion"]["chunk_insertion"] = chunk_db_insertion_summary
+    summary["db_insert"] = db_insert_summary
+    print(f"\nDatabase Insert Summary:")
+    print(f"  Total incidents: {db_insert_summary['total']}")
+    print(f"  Successful incidents: {db_insert_summary['successful']}")
+    print(f"  Skipped incidents: {db_insert_summary['skipped']}")
+    print(f"  Failed incidents: {db_insert_summary['failed']}")
+    print(f"  Parent rows inserted: {db_insert_summary['parent_rows_inserted']}")
+    print(f"  Chunk rows inserted: {db_insert_summary['chunk_rows_inserted']}")
+    if db_insert_summary['failures']:
+        print(f"  Failures: {json.dumps(db_insert_summary['failures'][:5], indent=2)}")
     
     return summary
 
