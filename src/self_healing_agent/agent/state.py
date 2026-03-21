@@ -93,9 +93,9 @@ RetrievalStrategy = Literal[
 ]
 
 RetrievalStageName = Literal[
-    "STAGE1_BROAD",
-    "STAGE2_FILTER",
-    "STAGE3_RERANK",
+    "STAGE1_HYBRID_RETRIEVE",
+    "STAGE2_RERANK",
+    "STAGE3_CONTEXT_FILTER",
 ]
 
 ContextValidity = Literal[
@@ -271,9 +271,9 @@ class StructuredInput(TypedDict):
     datacenter: Literal['AWSE', 'AWSW', 'AZUREE', 'AZUREW', 'GCE', 'GCW', 'BDC', 'ADC', 'CDC']
     metric_names: list[str]
     app_name: str
-    host: str|None
+    hosts: list[str] | None
     instances: list[str] | None
-    instance_host: list[str] | None
+    instance_hosts: list[str] | None
     reason: str
 
 

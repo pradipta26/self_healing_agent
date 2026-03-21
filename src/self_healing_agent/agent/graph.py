@@ -3,16 +3,16 @@ from langgraph.graph import END, START, StateGraph
 from self_healing_agent.agent.state import AgentState
 from self_healing_agent.agent.nodes.parse_raw_incident_text import parse_raw_incident_details
 from self_healing_agent.agent.nodes.validate_input import validate_input
+from self_healing_agent.agent.nodes.retrieve_context import retrieve_documents
 from self_healing_agent.agent.nodes.error_notification import send_error_notification
-from self_healing_agent.agent.router.router_functions import parse_raw_incident_text_router
-
+from self_healing_agent.agent.router.router_functions import parse_raw_incident_text_router, validate_input_router
+from self_healing_agent.retrieval.retrieval_service import retrieve_incident_context
 def build_graph():
     graph_builder = StateGraph(AgentState)
     graph_builder.add_node('parse_raw_incident_text', parse_raw_incident_details)
     graph_builder.add_node('send_error_notification', send_error_notification)
     graph_builder.add_node('validate_input', validate_input)
-
-    # # graph_builder.add_node("build_evidence_candidates", build_evidence_candidates)
+    graph_builder.add_node("retrieve_documents", retrieve_documents)
     # # graph_builder.add_node("invoke_llm", call_llm)
     # # graph_builder.add_node("validate_ai_output", validate_ai_response)
 
@@ -36,8 +36,12 @@ def build_graph():
         parse_raw_incident_text_router,
         {'validate_input': 'validate_input', 'send_error_notification': "send_error_notification"},
     )
-
-    graph_builder.add_edge("validate_input", END)
+    graph_builder.add_conditional_edges(
+        "validate_input",
+        validate_input_router,
+        {'retrieve_documents': 'retrieve_documents', 'send_error_notification': "send_error_notification"},
+    )
+    graph_builder.add_edge("retrieve_documents", END)
     graph_builder.add_edge("send_error_notification", END)
 
     # graph_builder.add_conditional_edges(
