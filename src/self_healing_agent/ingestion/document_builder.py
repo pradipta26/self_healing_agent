@@ -15,9 +15,9 @@ from psycopg2 import sql
 from pydantic import BaseModel
 from self_healing_agent.agent.nodes.parse_raw_incident_text import parse_raw_incident_details
 from self_healing_agent.agent.nodes.validate_input import validate_input
-from self_healing_agent.utils.incident_normalizer import normalized_resolution, build_problem_chunk
+from self_healing_agent.utils.incident_normalizer import normalized_resolution, normalize_reason_text
 from self_healing_agent.utils.rag_utils import DEFAULT_EMBEDDING_MODEL, embed_text
-
+from self_healing_agent.utils.utils import get_db_connection
 
 class NormalizedJSONIncident(BaseModel):
     incident_type: str
@@ -169,7 +169,7 @@ def _enhance_raw_json_incident(raw_incidents: list[dict[str, Any]]) -> list[Norm
             # Set closure_remarks
             closure_remarks, closure_remarks_normalized = normalized_resolution(raw_incident.get("CLOSURE_REMARKS"))
             
-            incident_reason_normalized = build_problem_chunk(raw_incident)
+            incident_reason_normalized = normalize_reason_text(raw_incident)
             normalized_reason_hash = build_payload_hash(incident_reason_normalized)
             warnings = parse_result['warnings']
             created_date = _optional_str(raw_incident, "created_date")
@@ -352,14 +352,7 @@ def _adapt_chunk_value(column: str, value: Any) -> Any:
     return value
 
 
-def _get_db_connection() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "postgres"),
-        user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "Suvra#10")
-    )
+
 
 def _insert_into_parent_incident_db(db_entries: list[dict[str, Any]]) -> dict[str, Any]:
     """
@@ -491,7 +484,7 @@ def _insert_into_parent_incident_db(db_entries: list[dict[str, Any]]) -> dict[st
     return summary
 
 
-def _insert_incidents_with_chunks_db(
+def _insert_incidents_into_chunks_db(
     conn: psycopg2.extensions.connection,
     enhanced_incidents: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -641,8 +634,8 @@ def document_builder() -> dict[str, Any]:
 
     conn = None
     try:
-        conn = _get_db_connection()
-        db_insert_summary = _insert_incidents_with_chunks_db(conn, enhanced_incidents)
+        conn = get_db_connection()
+        db_insert_summary = _insert_incidents_into_chunks_db(conn, enhanced_incidents)
     finally:
         if conn is not None:
             try:

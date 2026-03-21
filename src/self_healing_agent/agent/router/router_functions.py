@@ -8,6 +8,12 @@ def parse_raw_incident_text_router(state: AgentState):
     else:
         return 'send_error_notification'
 
+def validate_input_router(state: AgentState):
+   
+    if not state.get('error_flag', True):
+        return 'retrieve_documents'
+    else:
+        return 'send_error_notification'
 # def input_router(state: AgentState) -> str:
 #     """Determines which node to go to next based on state"""
 #     return "print_error" if state.get("error_flag", True) else "invoke_llm"

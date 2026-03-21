@@ -1,4 +1,4 @@
-from self_healing_agent.retrieval.document_builder import _create_parent_incident_db_entries
+from self_healing_agent.ingestion.document_builder import _create_parent_incident_db_entries
 
 
 def test_create_parent_incident_db_entries_normalizes_nullable_array_fields():

@@ -3,6 +3,14 @@ config_version: 1.0.0
 env_variables:
   SHA_ENV: DEV
   EMAILS: pradipta26@gmail.com
+  AUTONOMY_MODE: SHADOW
+  KILL_SWITCH_STATE: DISABLED
+  # Postgres DB connection:
+  DB_HOST: 127.0.0.1
+  DB_PORT: 5432
+  DB_USER: postgres
+  DB_PASSWORD: Suvra#10
+  DB_NAME: postgres
 
 validation_schema:
   schema_version: 1.0.0

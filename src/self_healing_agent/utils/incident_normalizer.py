@@ -1,5 +1,3 @@
-# src/self_healing_agent/utils/incident_normalizer.py
-
 from __future__ import annotations
 
 import re
@@ -208,21 +206,37 @@ def extract_reason_signal(
     return reason
 
 
-def build_problem_chunk(record: dict[str, Any]) -> str:
+def normalize_reason_text(record: dict[str, Any]) -> str:
     """
     Generate normalized semantic problem description used for embeddings.
     """
+    service = _clean_text(record.get("SERVICE_DOMAIN") or record.get("service_domain"))
+    app = _clean_text(record.get("APP_NAME") or record.get("app_name"))
+    dc = normalize_datacenter(record.get("DATACENTER") or record.get("datacenter"))
+    incident_type = normalize_incident_type(record.get("INCIDENT_TYPE") or record.get("incident_type"))
+    
+    raw_hosts = (
+        record.get("HOSTS")
+        or record.get("hosts")
+        or record.get("instance_host")
+        or ([record.get("host")] if record.get("host") else [])
+    )
+    hosts = normalize_hosts(raw_hosts)
 
-    service = _clean_text(record.get("SERVICE_DOMAIN"))
-    app = _clean_text(record.get("APP_NAME"))
-    metric = _clean_text(record.get("METRIC_NAME"))
-    dc = normalize_datacenter(record.get("DATACENTER"))
-    incident_type = normalize_incident_type(record.get("INCIDENT_TYPE"))
-    hosts = normalize_hosts(record.get("HOSTS"))
+    metric_value = record.get("METRIC_NAME")
+    if not metric_value:
+        metric_field = record.get("metric_names")
+        if isinstance(metric_field, list):
+            metric_value = ", ".join(metric_field)
+        else:
+            metric_value = metric_field
 
+    metric = _clean_text(metric_value)
+
+    incident_reason = record.get("INCIDENT_REASON") or record.get("reason")
     reason = extract_reason_signal(
-        record.get("INCIDENT_REASON"),
-        record.get("METRIC_NAME"),
+        incident_reason,
+        metric,
     )
 
     parts: list[str] = []
@@ -260,69 +274,173 @@ def build_problem_chunk(record: dict[str, Any]) -> str:
 def _normalize_resolution_text(closure_remarks: str | None) -> str:
     """
     Normalize resolution text for embedding generation.
+
+    Goal:
+    - preserve the remediation action
+    - remove person names, ticket-like ids, ports, host specifics, and noisy instance strings
+    - generalize infra details into reusable operational actions
     """
 
     if not closure_remarks:
         return ""
 
     text = closure_remarks.lower().strip()
-
     text = text.replace("_", " ")
     text = text.replace("-", " ")
 
-    # normalize common remediation actions
+    # --------------------------------------------------
+    # Normalize common remediation actions first
+    # --------------------------------------------------
     text = re.sub(
         r"\bkilled\s+\d+(?:/\d+)?\s+for\s+([a-z0-9_]+)",
         r"killed database sessions for \1",
         text,
     )
-    # normalize common remediation actions
     text = re.sub(
         r"\bserver\(s\)\s+restarted\b",
         "restarted application server",
         text,
     )
-    # normalize common remediation actions
     text = re.sub(
         r"\bstarted\s+the\s+jvms\b",
         "started jvms",
         text,
     )
-
+    text = re.sub(
+        r"\brestarted\s+.*?\s+to\s+clear\s+active\s+threads\b",
+        "restarted application instance to clear active threads",
+        text,
+    )
     text = re.sub(
         r"\bsuppresses\s+this\s+alert\b",
         "suppressed alert",
         text,
     )
+    text = re.sub(
+        r"\bcleared?\s+old\s+logs\b",
+        "cleared old logs",
+        text,
+    )
+    text = re.sub(
+        r"\badded\s+datafile\b",
+        "added datafile",
+        text,
+    )
+    text = re.sub(
+        r"\breduced\s+retention\b",
+        "reduced retention",
+        text,
+    )
 
-    # remove IDs
-    text = re.sub(r"\b\d+(?:/\d+)?\b", " ", text)
+    # --------------------------------------------------
+    # Remove human/operator names before action verbs
+    # Example: "syam babu restarted ..."
+    # --------------------------------------------------
+    text = re.sub(
+        r"\b[a-z]+\s+[a-z]+\s+(restarted|started|stopped|killed|cleared|added)\b",
+        r"\1",
+        text,
+        flags=re.IGNORECASE,
+    )
 
-    # normalize hostnames
+    # --------------------------------------------------
+    # Normalize hostnames / domains to generic targets
+    # --------------------------------------------------
     text = re.sub(
         r"\b[a-z0-9.-]+\.rds\.amazonaws\.com\b",
         "database host",
         text,
     )
-    # normalize common domain patterns
     text = re.sub(
         r"\b[a-z0-9.-]+\.mydomain\.com\b",
-        "application host",
+        "host",
         text,
     )
-    # normalize example.com hosts (common in synthetic data and tests)
     text = re.sub(
         r"\b[a-z0-9.-]+\.example\.com\b",
         "host",
         text,
     )
-    # remove control-plane labels
+
+    # Generic FQDNs that survived
     text = re.sub(
-        r"\b[a-z0-9._-]+:[a-z0-9._:-]+\b",
-        " ",
+        r"\b[a-z0-9-]+(?:\.[a-z0-9-]+){2,}\b",
+        "host",
         text,
     )
-    # remove numeric thresholds
+
+    # --------------------------------------------------
+    # Normalize noisy instance / server tokens
+    # --------------------------------------------------
+    text = re.sub(
+        r"\b[a-z0-9._-]+:[a-z0-9._:-]+\b",
+        " application instance ",
+        text,
+    )
+    text = re.sub(
+        r"\b(server\d+|cache\d+|esb\d+|mq\d+|node\d+|pod\d+)\b",
+        "application instance",
+        text,
+    )
+
+    # --------------------------------------------------
+    # Remove ids / ticket-like numeric noise
+    # --------------------------------------------------
+    text = re.sub(r"\b\d+(?:/\d+)?\b", " ", text)
+
+    # --------------------------------------------------
+    # Collapse over-specific wording into reusable action phrasing
+    # --------------------------------------------------
+    text = re.sub(
+        r"\brestarted\s+application\s+server\s+application\s+instance\b",
+        "restarted application server",
+        text,
+    )
+    text = re.sub(
+        r"\bkilled\s+database\s+sessions\s+for\s+[a-z0-9_]+\s+on\s+database\s+host\b",
+        "killed database sessions on database host",
+        text,
+    )
+    text = re.sub(
+        r"\busing\s+sre\s+portal\b",
+        "using sre portal",
+        text,
+    )
+    text = re.sub(
+        r"\busing\s+startup\s+script\b",
+        "using startup script",
+        text,
+    )
+
+    # Remove lingering punctuation fragments like "application :"
+    text = re.sub(r"\b(application|host|instance)\s*:\s*", r"\1 ", text)
+    
+    # Collapse duplicated synthetic target phrases
+    text = re.sub(
+        r"\bapplication\s+host\s+application\s+instance\b",
+        "application instance",
+        text,
+    )
+    text = re.sub(
+        r"\bapplication\s+application\s+instance\b",
+        "application instance",
+        text,
+    )
+    text = re.sub(
+        r"\brestarted\s+application\s+server(?:\s+application\s+instance)+\b",
+        "restarted application server",
+        text,
+    )
+    text = re.sub(
+        r"\brestarted\s+application\s+instance(?:\s+application\s+instance)+\b",
+        "restarted application instance",
+        text,
+    )
+    text = re.sub(
+        r"\bapplication\s+application\b",
+        "application",
+        text,
+    )
     text = re.sub(r"\s+", " ", text).strip(" ,;:.")
     return text
 

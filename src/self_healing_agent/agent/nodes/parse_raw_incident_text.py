@@ -389,6 +389,7 @@ def parse_raw_incident_details(state: AgentState) -> dict[str, Any]:
             "app_name": None,
             "hosts": None,
             "instances": [],
+            "instance_hosts": [],
             "reason": None,
         },
         'warnings': ["UNRECOGNIZED_INPUTTEXT_FORMAT"],
