@@ -15,7 +15,7 @@ from psycopg2 import sql
 from pydantic import BaseModel
 from self_healing_agent.agent.nodes.parse_raw_incident_text import parse_raw_incident_details
 from self_healing_agent.agent.nodes.validate_input import validate_input
-from self_healing_agent.utils.incident_normalizer import normalized_resolution, normalize_reason_text
+from self_healing_agent.utils.incident_normalizer import build_resolution_text, build_query_text
 from self_healing_agent.utils.rag_utils import DEFAULT_EMBEDDING_MODEL, embed_text
 from self_healing_agent.utils.utils import get_db_connection
 
@@ -167,9 +167,9 @@ def _enhance_raw_json_incident(raw_incidents: list[dict[str, Any]]) -> list[Norm
             # Set Incident Reason
             incident_reason = parse_result['structured_input']['reason']
             # Set closure_remarks
-            closure_remarks, closure_remarks_normalized = normalized_resolution(raw_incident.get("CLOSURE_REMARKS"))
+            closure_remarks, closure_remarks_normalized = build_resolution_text(raw_incident.get("CLOSURE_REMARKS"))
             
-            incident_reason_normalized = normalize_reason_text(raw_incident)
+            incident_reason_normalized = build_query_text(raw_incident)
             normalized_reason_hash = build_payload_hash(incident_reason_normalized)
             warnings = parse_result['warnings']
             created_date = _optional_str(raw_incident, "created_date")

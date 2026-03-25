@@ -1,14 +1,24 @@
 from typing import Any
 from self_healing_agent.agent.state import AgentState
-from self_healing_agent.retrieval.retrieval_service import retrieve_incident_context
+from self_healing_agent.retrieval.retrieval_service import rewrite_query_and_retry
 
 
-def retrieve_documents(state: AgentState) -> dict[str, Any]:
-    structured_input = state.get("structured_input", {})
-    incident_context = retrieve_incident_context(structured_input)
+def query_rewrite_and_retry(state: AgentState) -> dict[str, Any]:
+    original_query_text = state['retrieval_stages'][0]['query_used']
+    structured_input = state['structured_input']
+    context_validity: str = state["context_validation"]["validity"]
 
+    incident_context = rewrite_query_and_retry(
+        original_query=original_query_text, 
+        structured_input=structured_input, context_validity=context_validity
+    )
+    
+    query_rewrite_artifact = incident_context['query_rewrite_artifact']
     evidence_candidates = incident_context.get("retrieved_docs", [])[:3] # take top 3
-    retrieval_stages = incident_context.get("retrieval_stages", [])
+
+    current_retrieval_stages = incident_context.get("retrieval_stages", [])
+    retrieval_stages = state.get("retrieval_stages", []) + current_retrieval_stages 
+
     rco = incident_context.get("retrieval_confidence", {})
     errors = incident_context.get("errors", [])
     status = incident_context.get("status", "ERROR")
@@ -36,7 +46,7 @@ def retrieve_documents(state: AgentState) -> dict[str, Any]:
     # -----------------------------
     warnings = list(state.get("warnings", []))
     trace = list(state.get("trace", []))
-
+    
     if status == "ERROR":
         warnings.append("RETRIEVAL_EMPTY")
         trace.append("retrieve_documents:error")
@@ -54,7 +64,7 @@ def retrieve_documents(state: AgentState) -> dict[str, Any]:
         trace.append("retrieve_documents:low_quality")
 
     else:
-        trace.append("retrieve_documents:ok")
+        trace.append("query_rewrite_and_retry:ok")
 
     error_flag = False
     error_message = None
@@ -70,6 +80,7 @@ def retrieve_documents(state: AgentState) -> dict[str, Any]:
             err.get("message", "") for err in errors if err.get("message")
         )
     return {
+        "query_rewrite": query_rewrite_artifact,
         "evidence_candidates": evidence_candidates,
         "retrieval_stages": retrieval_stages,
         "rco": rco,

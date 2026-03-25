@@ -119,7 +119,6 @@ class QueryRewriteArtifact(TypedDict, total=False):
     Store small strings + metrics, not huge blobs.
     """
     original_query: str
-    normalized_query: str
     rewritten_query: str
     rewrite_type: RewriteType
     # Hybrid lexical boosting terms (BM25 / keyword boosts)
@@ -423,7 +422,8 @@ class AgentState(TypedDict, total=False):
     evidence_candidates: list[RetrievedDoc]        # retrieved docs (light)
     filtered_evidence: list[str]                   # final text snippets used to ground (kept small)
     evidence_valid: bool
-
+    retrieval_policy_route: Literal["RETRY", "PROCEED", "HITL_INVESTIGATION"]
+    retrieval_escalation_type: EscalationType
     # Model raw + parsed output
     llm_raw: str
     model_output: ModelOutput
