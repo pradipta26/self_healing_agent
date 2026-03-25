@@ -6,13 +6,17 @@ from self_healing_agent.utils.utils import get_logger
 from self_healing_agent.agent.state import StructuredInput
 from self_healing_agent.retrieval.hybrid_retriever import hybrid_retrieve
 from self_healing_agent.retrieval.retrieval_confidence import build_retrieval_confidence
-from self_healing_agent.utils.incident_normalizer import normalize_reason_text
+from self_healing_agent.utils.incident_normalizer import build_query_text
 from self_healing_agent.retrieval.reranker import rerank_candidates
+from self_healing_agent.retrieval.query_rewrite import build_deterministic_query_rewrite
 from self_healing_agent.agent.state import (
     RetrievalConfidenceObject,
     RetrievalStageResult,
-    RetrievedDoc
+    RetrievedDoc,
+    QueryRewriteArtifact
 )
+
+
 
 log = get_logger(__name__)
 
@@ -67,6 +71,7 @@ def _create_retrieval_stage_result(
     query_text: str,
     retrieved_docs: list[RetrievedDoc],
     error_list: list[dict[str, Any]],
+    attempt: int = 1
 ) -> RetrievalStageResult:
     stage_candidates: list[RetrievedDoc] = []
 
@@ -96,6 +101,7 @@ def _create_retrieval_stage_result(
         "query_used": query_text,
         "candidates": stage_candidates,
         "metrics": {
+            "attempt": attempt,
             "match_count": len(retrieved_docs),
             "top_vector_score": retrieved_docs[0].get("vector_score") if retrieved_docs else None,
             "top_rerank_score": retrieved_docs[0].get("rerank_score") if retrieved_docs else None,
@@ -105,46 +111,33 @@ def _create_retrieval_stage_result(
     }
 
 
-def _create_retrieval_confidence(status: str, reranked_matches: list[dict[str, Any]]) -> RetrievalConfidenceObject:
-    pass
-
-
-
-
-def retrieve_incident_context(
+def _run_retrieval_pipeline(
     structured_input: StructuredInput,
-    limit: int = 5,
+    query_text: str,
+    primary_metric: str | None,
+    incident_type: str | None,
+    attempt: int = 1,
+    limit: int = 3,
 ) -> dict[str, Any]:
-    metric_names = structured_input.get("metric_names", []) or []
-    primary_metric = metric_names[0] if metric_names else None
-    incident_type = structured_input.get("incident_type")
-
-    query_text = normalize_reason_text(structured_input)
-
+    
     retrieval_result = hybrid_retrieve(
-        query_text=query_text,
-        metric_name=primary_metric,
-        incident_type=incident_type,
-        limit=limit,
-    )
+            query_text=query_text,
+            metric_name=primary_metric,
+            incident_type=incident_type,
+            limit=limit,
+        )
 
     status = retrieval_result.get("status", "ERROR")
     matches = retrieval_result.get("matches", [])
     error_list = retrieval_result.get("errors", [])
+    # rerank
     reranked_matches = rerank_candidates(matches, structured_input)
-    retrieval_confidence = build_retrieval_confidence(status, reranked_matches)
-
-    # error = None
-    # error_type = None
-
-    # if error_list:
-    #     error = "; ".join(err.get("message", "") for err in error_list if err.get("message"))
-    #     error_type = ",".join(
-    #         sorted({err.get("error_type", "UNKNOWN_ERROR") for err in error_list})
-    #     )
+    # build retrieval confidence (RCO)
+    retrieval_confidence: RetrievalConfidenceObject = build_retrieval_confidence(status, reranked_matches)
     
-    retrieved_docs = _create_retrieved_docs(structured_input.get("env"), reranked_matches)
-    stage_result =_create_retrieval_stage_result(status, query_text, retrieved_docs, error_list)
+    retrieved_docs: list[RetrievedDoc] = _create_retrieved_docs(structured_input.get("env"), reranked_matches)
+    stage_result: RetrievalStageResult =_create_retrieval_stage_result(status, query_text, retrieved_docs, error_list, attempt)
+
     return {
         "status": status,
         "query_text": query_text,
@@ -156,6 +149,57 @@ def retrieve_incident_context(
         "retrieval_confidence": retrieval_confidence,
         "errors": error_list,
     }
+
+
+def retrieve_incident_context(
+    structured_input: StructuredInput,
+    limit: int = 5,
+) -> dict[str, Any]:
+    metric_names = structured_input.get("metric_names", []) or []
+    primary_metric = metric_names[0] if metric_names else None
+    incident_type = structured_input.get("incident_type")
+
+    query_text = build_query_text(structured_input)
+    retrieval_result = _run_retrieval_pipeline(
+        structured_input=structured_input,
+        query_text=query_text,
+        primary_metric=primary_metric,
+        incident_type=incident_type,
+        limit=limit,
+        attempt=1
+    )
+
+    return retrieval_result
+
+
+def rewrite_query_and_retry(
+    original_query: str,
+    structured_input: StructuredInput,
+    context_validity: str | None = None,
+    limit: int = 5,
+) -> dict[str, Any]:
+    
+    metric_names = structured_input.get("metric_names", []) or []
+    primary_metric = metric_names[0] if metric_names else None
+    incident_type = structured_input.get("incident_type")
+
+    query_rewrite: QueryRewriteArtifact = build_deterministic_query_rewrite(
+        original_query = original_query,
+        structured_input= structured_input, 
+        context_validity = context_validity)
+
+    rewrite_query_text = query_rewrite.get("rewritten_query", original_query)
+    retrieval_result = _run_retrieval_pipeline(
+        structured_input=structured_input,
+        query_text=rewrite_query_text,
+        primary_metric=primary_metric,
+        incident_type=incident_type,
+        limit=limit,
+        attempt=2
+    )
+    retrieval_result['query_rewrite_artifact'] = query_rewrite
+    return retrieval_result
+
 
 if __name__ == "__main__":
     from pprint import pprint

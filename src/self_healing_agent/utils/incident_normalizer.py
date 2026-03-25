@@ -16,6 +16,9 @@ def _clean_text(value: str | None) -> str:
 
     return text.strip()
 
+def get_primary_metric(metric_names: list[str]) -> str:
+    return metric_names[0].strip() if metric_names else ""
+
 
 def normalize_datacenter(dc: str | None) -> str:
     if not dc:
@@ -206,71 +209,6 @@ def extract_reason_signal(
     return reason
 
 
-def normalize_reason_text(record: dict[str, Any]) -> str:
-    """
-    Generate normalized semantic problem description used for embeddings.
-    """
-    service = _clean_text(record.get("SERVICE_DOMAIN") or record.get("service_domain"))
-    app = _clean_text(record.get("APP_NAME") or record.get("app_name"))
-    dc = normalize_datacenter(record.get("DATACENTER") or record.get("datacenter"))
-    incident_type = normalize_incident_type(record.get("INCIDENT_TYPE") or record.get("incident_type"))
-    
-    raw_hosts = (
-        record.get("HOSTS")
-        or record.get("hosts")
-        or record.get("instance_host")
-        or ([record.get("host")] if record.get("host") else [])
-    )
-    hosts = normalize_hosts(raw_hosts)
-
-    metric_value = record.get("METRIC_NAME")
-    if not metric_value:
-        metric_field = record.get("metric_names")
-        if isinstance(metric_field, list):
-            metric_value = ", ".join(metric_field)
-        else:
-            metric_value = metric_field
-
-    metric = _clean_text(metric_value)
-
-    incident_reason = record.get("INCIDENT_REASON") or record.get("reason")
-    reason = extract_reason_signal(
-        incident_reason,
-        metric,
-    )
-
-    parts: list[str] = []
-
-    if service:
-        parts.append(f"{service} service")
-
-    if incident_type:
-        parts.append(f"{incident_type} incident")
-
-    if dc:
-        parts.append(f"in {dc} datacenter")
-
-    if app:
-        parts.append(f"application {app}")
-
-    if metric:
-        parts.append(f"metric {metric}")
-
-    if reason:
-        reason = re.sub(r"\s+", " ", reason).strip(" ,;:")
-        parts.append(f"reason {reason}")
-
-    if hosts:
-        parts.append(f"hosts {', '.join(hosts)}")
-
-    text = ". ".join(parts)
-
-    if not text.endswith("."):
-        text += "."
-
-    return text
-
-
 def _normalize_resolution_text(closure_remarks: str | None) -> str:
     """
     Normalize resolution text for embedding generation.
@@ -444,7 +382,162 @@ def _normalize_resolution_text(closure_remarks: str | None) -> str:
     text = re.sub(r"\s+", " ", text).strip(" ,;:.")
     return text
 
-def normalized_resolution(resolution_text: str) -> tuple[str, str]:
+
+def build_query_text(record: dict[str, Any]) -> str:
+    """
+    Generate normalized semantic problem description used for embeddings.
+    """
+    service = _clean_text(record.get("SERVICE_DOMAIN") or record.get("service_domain"))
+    app = _clean_text(record.get("APP_NAME") or record.get("app_name"))
+    dc = normalize_datacenter(record.get("DATACENTER") or record.get("datacenter"))
+    incident_type = normalize_incident_type(record.get("INCIDENT_TYPE") or record.get("incident_type"))
+    
+    hosts_value = (
+        record.get("HOSTS")
+        or record.get("hosts")
+        or record.get("INSTANCE_HOSTS")
+        or record.get("instance_hosts")
+        or record.get("instance_host")  # legacy support
+    )
+    if isinstance(hosts_value, list):
+        raw_hosts = hosts_value
+    elif isinstance(hosts_value, str):
+        raw_hosts = [hosts_value]
+    else:
+        raw_hosts = []
+    hosts = normalize_hosts(raw_hosts)
+
+    metric_value = (
+        record.get("METRIC_NAME")
+        or record.get("metric_name")
+    )
+    if not metric_value:
+        metric_field = record.get("metric_names")
+        if isinstance(metric_field, list):
+            metric_value = ", ".join(metric_field)
+        else:
+            metric_value = metric_field
+
+    metric = _clean_text(metric_value)
+
+    incident_reason = record.get("INCIDENT_REASON") or record.get("reason")
+    reason = extract_reason_signal(
+        incident_reason,
+        metric,
+    )
+
+    parts: list[str] = []
+
+    if service:
+        parts.append(f"{service} service")
+
+    if incident_type:
+        parts.append(f"{incident_type} incident")
+
+    if dc:
+        parts.append(f"in {dc} datacenter")
+
+    if app:
+        parts.append(f"application {app}")
+
+    if metric:
+        parts.append(f"metric {metric}")
+
+    if reason:
+        reason = re.sub(r"\s+", " ", reason).strip(" ,;:")
+        parts.append(f"reason {reason}")
+
+    if hosts:
+        parts.append(f"hosts {', '.join(hosts)}")
+
+    text = ". ".join(parts)
+
+    if not text.endswith("."):
+        text += "."
+
+    return text
+
+
+def build_retry_query_text(
+    record: dict[str, Any],
+    *,
+    include_hosts: bool = False,
+    expansion_hints: list[str] | None = None,
+) -> str:
+    """
+    Build retry query text from validated StructuredInput-like records.
+
+    Assumptions:
+    - called only after input validation
+    - service_domain, incident_type, datacenter, app_name, metric_names, reason exist
+    - metric_names is a non-empty list[str]
+    """
+    service = _clean_text(record.get("service_domain"))
+    app = _clean_text(record.get("app_name"))
+    dc = normalize_datacenter(record.get("datacenter"))
+    incident_type = normalize_incident_type(record.get("incident_type"))
+    
+    if include_hosts:
+        hosts_value = record.get("hosts") or record.get("instance_hosts")
+        
+        if isinstance(hosts_value, list):
+            raw_hosts = hosts_value
+        elif isinstance(hosts_value, str):
+            raw_hosts = [hosts_value]
+        else:
+            raw_hosts = []
+        hosts = normalize_hosts(raw_hosts)
+    else:
+        hosts = []
+
+    # metric_names value existancce and list type is already validated in validate_input() as mandatory field
+    metric_names = record.get("metric_names", [])
+    primary_metric = get_primary_metric(metric_names)
+    metric = _clean_text(", ".join(metric_names))
+    
+    # reason value existancce is already validated in validate_input() as mandatory field
+    incident_reason = record.get("reason")
+    reason = extract_reason_signal(incident_reason, metric)
+
+    parts: list[str] = []
+
+    if service:
+        parts.append(f"{service} service")
+
+    if incident_type:
+        parts.append(f"{incident_type} incident")
+
+    if dc:
+        parts.append(f"in {dc} datacenter")
+
+    if app:
+        parts.append(f"application {app}")
+
+    if primary_metric:
+        parts.append(f"metric {primary_metric}")
+
+    if reason:
+        reason = re.sub(r"\s+", " ", reason).strip(" ,;:")
+        parts.append(f"reason {reason}")
+
+    if hosts:
+        parts.append(f"hosts {', '.join(hosts)}")
+
+    if expansion_hints:
+        for hint in expansion_hints:
+            cleaned_hint = _clean_text(hint)
+            if cleaned_hint: 
+                parts.append(f"hint {cleaned_hint}")
+
+    text = ". ".join(parts)
+
+    if not text.endswith("."):
+        text += "."
+
+    return text
+
+
+def build_resolution_text(resolution_text: str) -> tuple[str, str]:
     """
     Return:
     - readable chunk text
@@ -459,3 +552,40 @@ def normalized_resolution(resolution_text: str) -> tuple[str, str]:
     normalized_text = _normalize_resolution_text(closure)
 
     return f"resolution {closure}.", normalized_text
+
+
+if __name__ == "__main__":
+    from pprint import pprint
+
+    structured_input = {
+        "incident_type": "Host Infrastructure",
+        "env": "DEV",
+        "service_domain": "H0JV",
+        "datacenter": "CDC",
+        "metric_names": [
+            "jvm mismatch"
+        ],
+        "app_name": "H0JV-JVM-STATUS",
+        "hosts": [
+            "CDC-S POS-MS LP 2.0 H0JV Jvm Status Mismatch"
+        ],
+        "instances": [
+            "Reference List: CDC.POS-MS-LP.jvmlistx"
+        ],
+        "instance_hosts": [],
+        "reason": "jvm mismatch >= 0.0"
+    }
+
+
+    result = build_retry_query_text(structured_input, 
+                                    expansion_hints=["jvm status mismatch", "missing jvms", "jvm status check"])
+    pprint(result)
+    # for match in result["matches"]:
+    #     pprint({
+    #         "parent_id": match["parent_id"],
+    #         "similarity": match["similarity"],
+    #         "retrieval_level": match["retrieval_level"],
+    #         "rerank_score": match["rerank_score"],
+    #         "rerank_signals": match["rerank_signals"],
+    #         "resolution_text_normalized": match["resolution_text_normalized"],
+    #     })
