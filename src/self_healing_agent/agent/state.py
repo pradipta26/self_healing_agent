@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 # -----------------------------
 ENVIRONMENT = Literal["PROD", "CANARY", "STAGING", "DEV"]
 INCIDENT_TYPE = Literal[ "Host Infrastructure", "Service DC", "Service Instance", "System DC", "System Instance" ]
-Category = Literal["CPU", "MEMORY", "NETWORK", "UNKNOWN"]
+Category = Literal["CPU", "MEMORY", "NETWORK", "APPLICATION", "DATABASE", "JVM", "STORAGE", "DEPENDENCY", "CONFIGURATION", "UNKNOWN",]
 Confidence = Literal["HIGH", "MEDIUM", "LOW", "UNKNOWN"]
 Actionability = Literal[
     "INPUT_INVALID",
@@ -283,7 +283,6 @@ class ModelOutput(TypedDict, total=False):
     description: str
     evidence_ids: list[int]
     remediation: list[str]
-
     # Optional: structured grounding hooks (if your prompt returns them)
     cited_doc_ids: list[str]  # PRDB doc ids used
     hypotheses: list[str]
@@ -427,7 +426,8 @@ class AgentState(TypedDict, total=False):
     # Model raw + parsed output
     llm_raw: str
     model_output: ModelOutput
-
+    grounding_policy_route: Literal["PROCEED", "HITL_INVESTIGATION"]
+    grounding_escalation_type: EscalationType
     # Decisioning
     decision: DecisionSnapshot
     proposal_output: ProposalOutput

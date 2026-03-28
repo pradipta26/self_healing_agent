@@ -12,6 +12,9 @@ env_variables:
   DB_PASSWORD: Suvra#10
   DB_NAME: postgres
 
+  # GOOGLE_API_KEY is directly set in system env variable
+  LLM_MODEL: gemini-2.5-flash
+  USE_VERTEX_AI: False
 validation_schema:
   schema_version: 1.0.0
   description: Validation contract for parsed structured_input payloads.

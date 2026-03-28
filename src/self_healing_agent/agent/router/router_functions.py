@@ -19,16 +19,33 @@ def retrive_document_router(state: AgentState):
     return 'send_error_notification'
 
 
-def context_validation_policy_router(state: AgentState):
-    route = state.get('retrieval_policy_route', '')
-    if route == 'PROCEED':
-        return 'execute_llm_call'
-    elif route == 'RETRY':
-        return 'query_rewrite_and_retry'
-    
-    return 'hilt_investigation'
-
 def query_rewrite_and_retry_router(state: AgentState):
     if not state.get('error_flag', True):
         return 'validate_context'
     return 'send_error_notification'
+
+
+def context_validation_policy_router(state: AgentState):
+    route = state.get('retrieval_policy_route', '')
+    if route == 'PROCEED':
+        return 'invoke_llm'
+    elif route == 'RETRY':
+        return 'query_rewrite_and_retry'
+    return 'hilt_investigation'
+
+
+def invoke_llm_router(state: AgentState):
+    if not state.get('error_flag', True):
+        return 'check_grounding'
+    return 'send_error_notification'
+
+def grounding_check_router(state: AgentState):
+    if not state.get('error_flag', True):
+        return 'grounding_policy_decision'
+    return 'send_error_notification'
+
+def grounding_policy_router(state: AgentState):
+    route = state.get("grounding_policy_route", "")
+    if route == "PROCEED":
+        return "next_step"
+    return "hitl_investigation"
