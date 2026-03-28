@@ -7,6 +7,9 @@ from self_healing_agent.agent.nodes.retrieve_context import retrieve_documents
 from self_healing_agent.agent.nodes.context_validator import validate_context
 from self_healing_agent.agent.nodes.rewrite_and_retry import query_rewrite_and_retry
 from self_healing_agent.agent.nodes.retrieval_policy import retrieval_policy_decision
+from self_healing_agent.agent.nodes.invoke_llm import invoke_llm
+from self_healing_agent.agent.nodes.grounding_check import grounding_check
+from self_healing_agent.agent.nodes.grounding_policy import grounding_policy_decision
 from self_healing_agent.agent.nodes.error_notification import send_error_notification
 from self_healing_agent.agent.router.router_functions import (
     parse_raw_incident_text_router, 
@@ -14,6 +17,9 @@ from self_healing_agent.agent.router.router_functions import (
     retrive_document_router,
     query_rewrite_and_retry_router,
     context_validation_policy_router,
+    invoke_llm_router, 
+    grounding_check_router,
+    grounding_policy_router
 )
 
 
@@ -27,6 +33,9 @@ def build_graph():
     graph_builder.add_node("validate_context", validate_context)
     graph_builder.add_node("query_rewrite_and_retry", query_rewrite_and_retry)
     graph_builder.add_node("retrieval_policy_decision", retrieval_policy_decision)
+    graph_builder.add_node("invoke_llm", invoke_llm)
+    graph_builder.add_node("check_grounding", grounding_check)
+    graph_builder.add_node("grounding_policy_decision", grounding_policy_decision)
 
     graph_builder.add_edge(START, "parse_raw_incident_text")
     graph_builder.add_conditional_edges(
@@ -57,10 +66,32 @@ def build_graph():
     graph_builder.add_conditional_edges(
         "retrieval_policy_decision",
         context_validation_policy_router,
-        {'execute_llm_call':END, 'query_rewrite_and_retry': 'query_rewrite_and_retry', 'hitl_investigation':END},
+        {'invoke_llm': 'invoke_llm', 'query_rewrite_and_retry': 'query_rewrite_and_retry', 'hitl_investigation':END},
     )
-
+    graph_builder.add_conditional_edges(
+        "invoke_llm",
+        invoke_llm_router,
+        {
+            "check_grounding": "check_grounding",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+    graph_builder.add_conditional_edges(
+        "check_grounding",
+        grounding_check_router,
+        {
+            "grounding_policy_decision": "grounding_policy_decision",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+    graph_builder.add_conditional_edges(
+        "grounding_policy_decision",
+        grounding_policy_router,
+        {
+            "next_step": END,
+            "hitl_investigation": "send_error_notification",
+        },
+    )
     graph_builder.add_edge("send_error_notification", END)
 
     return graph_builder.compile()
-

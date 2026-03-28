@@ -28,9 +28,9 @@ def _create_retrieved_docs(env: str, reranked_matches: list[dict[str, Any]]) -> 
     for match in reranked_matches:
         problem = match.get("problem_text_normalized")
         resolution = match.get("resolution_text_normalized")
-
+        prdb_parent_id = str(match["parent_id"])
         if problem and resolution:
-            snippet = f"{problem} -> {resolution}"
+            snippet = f"parent_doc_id={prdb_parent_id} | {problem} -> {resolution}"
         elif problem:
             snippet = problem
         elif resolution:
@@ -119,7 +119,7 @@ def _run_retrieval_pipeline(
     attempt: int = 1,
     limit: int = 3,
 ) -> dict[str, Any]:
-    
+    # hybrid retrival from PostGres Vector DB
     retrieval_result = hybrid_retrieve(
             query_text=query_text,
             metric_name=primary_metric,
