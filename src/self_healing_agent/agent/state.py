@@ -312,12 +312,28 @@ class ApprovalRequest(TypedDict):
 class InvestigationRequest(TypedDict):
     request_id: str
     decision: DecisionSnapshot
+
+    # Incident identity / source context
+    incident_id: str
+    incident_raw: str
     service: str
     env: ENVIRONMENT
+    timestamp_utc: str
+
+    # Why escalated
     suspected_issue: str
+    escalation_origin_step: str | None
+    escalation_reason: str
+    error_message: str | None
+    warnings: list[str]
     trigger_codes: list[TriggerCode]
+
+    # What system tried
+    query_attempts: list[str]
     evidence: list[str]
     suggested_actions: list[str]
+
+    # Human guidance
     notes: list[str]
     questions: list[str]
     data_to_collect: list[str]
@@ -387,6 +403,9 @@ class BlastRadiusAssessment(TypedDict, total=False):
 # The main AgentState (updated)
 # -----------------------------
 class AgentState(TypedDict, total=False):
+
+    # Log strat Timestamp
+    processing_start_time_ms: str  # ISO-8601 timestamp of when the state was created/updated
     # Inputs
     incident_raw: str
     structured_input: StructuredInput
@@ -398,8 +417,10 @@ class AgentState(TypedDict, total=False):
     # IMPORTANT: PRDB primary key for the Hawkeye incident when 1:1 exists
     prdb_id: str | None  # keep optional because not all PRDB rows come from HE
 
+    decision_start_time_ms: int  # ISO-8601 timestamp of when the decision process started (for latency measurement)
     decision_id: str | None        # authoritative correlation id for this run's committed decision
     decision_log_id: str | None    # storage id / ref returned by the log sink (if any)
+    decision_log: DecisionLog | None    # populated after decision is made; not used for correlation (use decision_log_id instead)
 
     # Safety / rollout
     autonomy_mode: Literal["OFF", "SHADOW", "LIVE"]
@@ -424,6 +445,8 @@ class AgentState(TypedDict, total=False):
     retrieval_policy_route: Literal["RETRY", "PROCEED", "HITL_INVESTIGATION"]
     retrieval_escalation_type: EscalationType
     # Model raw + parsed output
+    llm_model_name: str
+    llm_model_version: str
     llm_raw: str
     model_output: ModelOutput
     grounding_policy_route: Literal["PROCEED", "HITL_INVESTIGATION"]

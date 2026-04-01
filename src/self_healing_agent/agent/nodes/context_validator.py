@@ -23,10 +23,9 @@ def validate_context(state: AgentState) -> dict[str, Any]:
     )
 
     if evidence_valid:
-        trace.append("retry_context_validation:ok")
+        trace.append("context_validation:ok")
         warnings = [warning for warning in warnings if "CONFLICTING" not in warning
                     and warning not in {"CONTEXT_LOW_QUALITY", "RETRIEVAL_EMPTY"}]
-
     else:
         validity = context_validation.get("validity", "LOW_QUALITY")
         if validity == "CONFLICTING":
