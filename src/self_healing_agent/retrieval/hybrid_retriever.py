@@ -4,7 +4,7 @@ from typing import Any
 from psycopg2.extensions import connection as Connection
 
 from self_healing_agent.utils.rag_utils import embed_text
-from self_healing_agent.utils.utils import get_db_connection, get_logger
+from self_healing_agent.utils.db_utils import get_db_connection, get_logger
 
 logger = get_logger(__name__)
 

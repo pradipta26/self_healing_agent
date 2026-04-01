@@ -178,17 +178,36 @@ CREATE TABLE IF NOT EXISTS decision_log (
     -- Evidence / retrieval references
     evidence_ref_ids INT[] NOT NULL DEFAULT '{}',
     retrieved_doc_ids TEXT[] NOT NULL DEFAULT '{}',
+    evidence_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     rco_summary TEXT,
     query_rewrite JSONB,
+
+    --retrieval quality signals
+    retrieval_score_avg FLOAT,
+    retrieval_empty BOOLEAN,
+    conflicting_signals BOOLEAN,
 
     -- Tool / execution references
     tool_plan_hash TEXT,
 
+    -- execution outcome linkage
+    execution_status TEXT,   -- SUCCESS / FAILED / SKIPPED
+    rollback_status TEXT,
+
+    -- human outcome feedback
+    human_decision TEXT,   -- APPROVED / REJECTED / MODIFIED
+    human_reason TEXT,
+    
     -- Raw committed artifacts for auditability
     structured_input JSONB,
     decision_snapshot JSONB NOT NULL,
 
+    -- Model metadata --
+    model_name TEXT,
+    model_version TEXT,
+
     -- Metadata
+    decision_latency_ms INTEGER,
     schema_version TEXT NOT NULL,
     timestamp_utc TIMESTAMPTZ NOT NULL,
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

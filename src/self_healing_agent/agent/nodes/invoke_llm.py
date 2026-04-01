@@ -49,6 +49,8 @@ def invoke_llm(state: AgentState) -> dict[str, Any]:
 
         trace.append("invoke_llm:ok")
         return {
+            "llm_model_name": llm_client.model_name or None,
+            "llm_model_version": None,
             "llm_raw": llm_raw,
             "model_output": model_output,
             "warnings": warnings,
@@ -61,6 +63,8 @@ def invoke_llm(state: AgentState) -> dict[str, Any]:
         warnings.append("MODEL_OUTPUT_SCHEMA_VIOLATION")
         trace.append("invoke_llm:schema_violation")
         return {
+            "llm_model_name": llm_client.model_name or None,
+            "llm_model_version": None,
             "llm_raw": None,
             "model_output": {},
             "warnings": warnings,
@@ -73,6 +77,8 @@ def invoke_llm(state: AgentState) -> dict[str, Any]:
         warnings.append("MODEL_OUTPUT_SCHEMA_VIOLATION")
         trace.append("invoke_llm:value_error")
         return {
+            "llm_model_name": llm_client.model_name or None,
+            "llm_model_version": None,
             "llm_raw": None,
             "model_output": {},
             "warnings": warnings,
@@ -84,6 +90,8 @@ def invoke_llm(state: AgentState) -> dict[str, Any]:
     except Exception as exc:
         trace.append("invoke_llm:error")
         return {
+            "llm_model_name": llm_client.model_name or None,
+            "llm_model_version": None,
             "llm_raw": None,
             "model_output": {},
             "warnings": warnings,

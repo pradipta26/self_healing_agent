@@ -191,7 +191,8 @@ def _parse_infra_host(text: str) -> dict[str, Any]:
     host = _extract_host_from_infra(text)
     if not host:
         warnings.append("MISSING_HOST")
-    elif host and not bool(FQDN_REGEX.fullmatch(host)):
+    #elif host and not bool(FQDN_REGEX.fullmatch(host)):
+    elif host and not bool(FQDN_REGEX.fullmatch(host.split(':')[0])):
         warnings.append("HOST_NOT_FQDN")
     
     instance_tail = _extract_between(text, "Instance:").strip()
@@ -279,7 +280,8 @@ def _parse_system_instance(text: str) -> dict[str, Any]:
     host = _extract_between(text, "Host:")
     if not host:
         warnings.append("MISSING_HOST")
-    elif not bool(FQDN_REGEX.fullmatch(host)):
+    #elif not bool(FQDN_REGEX.fullmatch(host)):
+    elif host and not bool(FQDN_REGEX.fullmatch(host.split(':')[0])):
         warnings.append("HOST_NOT_FQDN")
 
     return {
