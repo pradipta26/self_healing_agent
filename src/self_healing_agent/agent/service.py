@@ -37,14 +37,14 @@ def _quick_test_main() -> None:
             "Host Infra",
             ";System: H0JV , DC: CDC , MetricName: jvm mismatch ,Application: H0JV-JVM-STATUS for host: CDC-S POS-MS LP 2.0 H0JV Jvm Status Mismatch, 4 missing tpswpsghzap007:onevz-assisted-msf-appointment-service:onevz-assisted-msf-appointment-service01:3116 = missing,tpswpsghzap007:onevz-assisted-msf-appointment-service:onevz-assisted-msf-appointment-service02:3117 = missing,tpswpsghzap008:onevz-assisted-msf-appointment-service:onevz-assisted-msf-appointment-service01:3116 = missing,tpswpsghzap008:onevz-assisted-msf-appointment-service:onevz-assisted-msf-appointment-service02:3117 = missing, Instance: Reference List: CDC.POS-MS-LP.jvmlistx has jvm mismatch >= 0.0",
         ),
-        (
-            "Service DC",
-            "Reason: 3 hosts have oracle-db-gg-lag >= 510.0, Configured Host Capacity - 10;System: BRHV, DC: BDC, MetricName: oracle-db-gg-lag, Application: SPLEX-Common-Operations",
-        ),
-        (
-            "System Instance",
-            "Reason: mssql-sqldb-cpu-usage >= 95.0;System: RTVV ,DC: BDC ,MetricName: mssql-sqldb-cpu-usage ,Application: VZDASH-DB-MSSQL-WLS-VZDASH, Host: TDCWPRTVVD003",
-        ),
+        # (
+        #     "Service DC",
+        #     "Reason: 3 hosts have oracle-db-gg-lag >= 510.0, Configured Host Capacity - 10;System: BRHV, DC: BDC, MetricName: oracle-db-gg-lag, Application: SPLEX-Common-Operations",
+        # ),
+        # (
+        #     "System Instance",
+        #     "Reason: mssql-sqldb-cpu-usage >= 95.0;System: RTVV ,DC: BDC ,MetricName: mssql-sqldb-cpu-usage ,Application: VZDASH-DB-MSSQL-WLS-VZDASH, Host: TDCWPRTVVD003",
+        # ),
         # (
         #     "System Instance",
         #     "Reason: oracle-db-session-blocker >= 1000.0;System: CHHV ,DC: AWS-E ,MetricName: oracle-db-session-blocker ,Application: Databases-ONEMSG, Host: onmsrpte.cleqqvmifzmp.us-east-1.rds.amazonaws.com:2055",

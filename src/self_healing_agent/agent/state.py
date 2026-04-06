@@ -112,6 +112,19 @@ GroundingVerdict = Literal[
     "NOT_GROUNDED",
 ]
 
+AutonomyLevel = Literal["L0", "L1", "L2", "L3", "L4"]
+ActionExecutionMode = Literal["BLOCKED", "PROPOSE_ONLY", "APPROVAL_REQUIRED", "AUTO_EXECUTE"]
+BlastRadiusLevel = Literal["LOW", "MEDIUM", "HIGH", "UNKNOWN"]
+
+class ActionPolicyDecision(TypedDict):
+    allowed: bool
+    effective_autonomy_level: AutonomyLevel
+    execution_mode: ActionExecutionMode
+    required_human_role: HumanRole
+    blast_radius: BlastRadiusLevel
+    action_families: list[str]
+    reasons: list[str]
+
 
 class QueryRewriteArtifact(TypedDict, total=False):
     """
@@ -455,6 +468,9 @@ class AgentState(TypedDict, total=False):
     decision: DecisionSnapshot
     proposal_output: ProposalOutput
 
+    # Action policy decision
+    action_policy_decision: ActionPolicyDecision
+    
     # HITL routes
     approval_request: ApprovalRequest
     investigation_request: InvestigationRequest

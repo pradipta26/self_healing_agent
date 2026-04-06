@@ -7,6 +7,31 @@ from typing import Any
 import yaml
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+def load_yaml_config(relative_path: str) -> dict[str, Any]:
+    """
+    Load a YAML file from the project root using a relative path.
+
+    Example:
+        load_yaml_config("self_healing_agent/configs/policies/actions.yaml")
+        load_yaml_config("self_healing_agent/configs/env/dev_config.yaml")
+    """
+    file_path = _PROJECT_ROOT / relative_path
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"YAML config file not found: {file_path}")
+
+    with file_path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+
+    if not isinstance(data, dict):
+        raise ValueError(f"YAML config must load into a dict: {file_path}")
+
+    return data
+
+
 def load_env_from_config(env: str = "dev", overwrite: bool = False) -> dict[str, str]:
     """
     Load only top-level `env_variables` from configs/env/{env}_config.yaml into os.environ.
@@ -17,8 +42,7 @@ def load_env_from_config(env: str = "dev", overwrite: bool = False) -> dict[str,
     Returns:
         A dict of environment variables that were written to os.environ.
     """
-    project_root = Path(__file__).resolve().parents[3]
-    config_path = project_root / "configs" / "env" / f"{env}_config.yaml"
+    config_path = _PROJECT_ROOT / "configs" / "env" / f"{env}_config.yaml"
 
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")

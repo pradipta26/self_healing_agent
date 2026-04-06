@@ -37,6 +37,30 @@ def _compute_retrieval_score_avg(evidence_candidates: list[dict[str, Any]]) -> f
     return None
 
 
+def _derive_action_families(context_validation) -> list[str]:
+    raw_families = context_validation.get("facts", {}).get("action_families", [])
+    families = sorted({f for f in raw_families if f != "OTHER"})
+    return families
+
+
+def _build_evidence_snapshot(grounding_check, filtered_evidence) -> list[str]:
+    grounded_doc_ids = { str(doc_id) for doc_id in grounding_check.get("used_evidence_doc_ids", [])}
+
+    if grounded_doc_ids:
+        grounded_snippets = []
+        for grounded_doc_id in grounded_doc_ids:
+            for doc in filtered_evidence:
+                if f'parent_doc_id={grounded_doc_id}' in doc:
+                    grounded_snippets.append(doc)
+                    break
+        
+        if grounded_snippets:
+            return grounded_snippets
+
+    return filtered_evidence
+
+
+
 def build_decision_log(state: AgentState) -> dict[str, Any]:
     warnings = list(state.get("warnings", []))
     trace = list(state.get("trace", []))
@@ -97,8 +121,8 @@ def build_decision_log(state: AgentState) -> dict[str, Any]:
             "grounding": {
                 "verdict": state.get("grounding_check", {}).get("verdict"),
             },
-            "actionability": {
-                "family": state.get("context_validation", {}).get("facts", {}).get("action_families", []),
+            "actionability": { # state.get("context_validation", {}).get("facts", {}).get("action_families", []),
+                "families": _derive_action_families(state.get("context_validation", {})),
                 "allowed": state.get("proposal_output", {}).get("approval_required", True) == False,
             },
             "autonomy": {
@@ -109,8 +133,8 @@ def build_decision_log(state: AgentState) -> dict[str, Any]:
 
         # Evidence and intent references
         "evidence_ref_ids": _to_int_list(used_evidence_doc_ids),
-        "evidence_snapshot": state.get("evidence_snapshot", {}),
-
+        #"evidence_snapshot": state.get("evidence_snapshot", {}),
+        "evidence_snapshot":_build_evidence_snapshot(state.get("grounding_check", {}), state.get("filtered_evidence", [])),
         "tool_plan_hash": None,
 
         # RAG / retrieval references

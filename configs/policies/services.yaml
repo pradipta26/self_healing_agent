@@ -1,0 +1,32 @@
+version: "v1"
+
+services:
+  H0JV:
+    max_autonomy_level: L2
+    blocked_action_families: []
+    action_overrides:
+      RESTART:
+        execution_mode_by_env:
+          DEV: AUTO_EXECUTE
+          PROD: APPROVAL_REQUIRED
+
+  BRHV:
+    max_autonomy_level: L1
+    blocked_action_families:
+      - FAILOVER
+    action_overrides:
+      RESTART:
+        execution_mode_by_env:
+          DEV: APPROVAL_REQUIRED
+          PROD: PROPOSE_ONLY
+
+  RTVV:
+    max_autonomy_level: L1
+    blocked_action_families:
+      - CLEAR_OR_KILL
+    action_overrides: {}
+
+default_service_policy:
+  max_autonomy_level: L1
+  blocked_action_families: []
+  action_overrides: {}
