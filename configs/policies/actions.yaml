@@ -1,0 +1,72 @@
+version: "v1"
+
+actions:
+  RESTART:
+    allowed: true
+    default_autonomy_level: L2
+    execution_mode_by_env:
+      DEV: AUTO_EXECUTE
+      STAGING: APPROVAL_REQUIRED
+      CANARY: APPROVAL_REQUIRED
+      PROD: APPROVAL_REQUIRED
+    required_grounding: GROUNDED
+    required_context_validity:
+      - VALID
+    max_blast_radius: LOW
+    required_human_role_if_blocked: INVESTIGATOR
+
+  CLEAR_OR_KILL:
+    allowed: true
+    default_autonomy_level: L1
+    execution_mode_by_env:
+      DEV: APPROVAL_REQUIRED
+      STAGING: APPROVAL_REQUIRED
+      CANARY: APPROVAL_REQUIRED
+      PROD: PROPOSE_ONLY
+    required_grounding: GROUNDED
+    required_context_validity:
+      - VALID
+    max_blast_radius: LOW
+    required_human_role_if_blocked: APPROVER
+
+  FAILOVER:
+    allowed: true
+    default_autonomy_level: L1
+    execution_mode_by_env:
+      DEV: APPROVAL_REQUIRED
+      STAGING: APPROVAL_REQUIRED
+      CANARY: PROPOSE_ONLY
+      PROD: PROPOSE_ONLY
+    required_grounding: GROUNDED
+    required_context_validity:
+      - VALID
+    max_blast_radius: MEDIUM
+    required_human_role_if_blocked: INCIDENT_COMMANDER
+
+  SCALE:
+    allowed: true
+    default_autonomy_level: L2
+    execution_mode_by_env:
+      DEV: AUTO_EXECUTE
+      STAGING: APPROVAL_REQUIRED
+      CANARY: APPROVAL_REQUIRED
+      PROD: APPROVAL_REQUIRED
+    required_grounding: GROUNDED
+    required_context_validity:
+      - VALID
+    max_blast_radius: LOW
+    required_human_role_if_blocked: APPROVER
+
+  UNKNOWN:
+    allowed: false
+    default_autonomy_level: L0
+    execution_mode_by_env:
+      DEV: BLOCKED
+      STAGING: BLOCKED
+      CANARY: BLOCKED
+      PROD: BLOCKED
+    required_grounding: GROUNDED
+    required_context_validity:
+      - VALID
+    max_blast_radius: UNKNOWN
+    required_human_role_if_blocked: INVESTIGATOR

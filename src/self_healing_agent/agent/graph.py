@@ -11,6 +11,7 @@ from self_healing_agent.agent.nodes.invoke_llm import invoke_llm
 from self_healing_agent.agent.nodes.grounding_check import grounding_check
 from self_healing_agent.agent.nodes.grounding_policy import grounding_policy_decision
 from self_healing_agent.agent.nodes.build_decision import build_decision
+from self_healing_agent.agent.nodes.evaluate_action_policy import evaluate_action_policy
 from self_healing_agent.agent.nodes.build_proposal import build_proposal_output
 from self_healing_agent.agent.nodes.build_investigation_request import build_investigation_request
 from self_healing_agent.agent.nodes.build_decision_log import build_decision_log
@@ -24,7 +25,8 @@ from self_healing_agent.agent.router.router_functions import (
     retrieval_policy_router,
     invoke_llm_router,
     grounding_check_router,
-    build_decision_router,
+    # build_decision_router,
+    action_policy_router,
 )
 
 
@@ -42,6 +44,7 @@ def build_graph():
     graph_builder.add_node("check_grounding", grounding_check)
     graph_builder.add_node("grounding_policy_decision", grounding_policy_decision)
     graph_builder.add_node("build_decision", build_decision)
+    graph_builder.add_node("evaluate_action_policy", evaluate_action_policy)
     graph_builder.add_node("build_proposal_output", build_proposal_output)
     graph_builder.add_node("build_investigation_request", build_investigation_request)
     graph_builder.add_node("build_decision_log", build_decision_log)
@@ -116,10 +119,19 @@ def build_graph():
     )
 
     graph_builder.add_edge("grounding_policy_decision", "build_decision")
+    graph_builder.add_edge("build_decision", "evaluate_action_policy")
 
+    # graph_builder.add_conditional_edges(
+    #     "build_decision",
+    #     build_decision_router,
+    #     {
+    #         "build_proposal_output": "build_proposal_output",
+    #         "build_investigation_request": "build_investigation_request",
+    #     },
+    # )
     graph_builder.add_conditional_edges(
-        "build_decision",
-        build_decision_router,
+        "evaluate_action_policy",
+        action_policy_router,
         {
             "build_proposal_output": "build_proposal_output",
             "build_investigation_request": "build_investigation_request",

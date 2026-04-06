@@ -37,14 +37,14 @@ def _quick_test_main() -> None:
             "Host Infra",
             ";System: ABCD , DC: CDC , MetricName: jvm mismatch ,Application: ABCD-JVM-STATUS for host: CDC-S POS-MS LP 2.0 ABCD Jvm Status Mismatch, 4 missing app-host-01:sample-assisted-msf-appointment-service:sample-assisted-msf-appointment-service01:3116 = missing,app-host-01:sample-assisted-msf-appointment-service:sample-assisted-msf-appointment-service02:3117 = missing,app-host-01:sample-assisted-msf-appointment-service:sample-assisted-msf-appointment-service01:3116 = missing,app-host-01:sample-assisted-msf-appointment-service:sample-assisted-msf-appointment-service02:3117 = missing, Instance: Reference List: CDC.POS-MS-LP.jvmlistx has jvm mismatch >= 0.0",
         ),
-        (
-            "Service DC",
-            "Reason: 3 hosts have oracle-db-gg-lag >= 510.0, Configured Host Capacity - 10;System: ABDC, DC: BDC, MetricName: oracle-db-gg-lag, Application: SPLEX-Common-Operations",
-        ),
-        (
-            "System Instance",
-            "Reason: mssql-sqldb-cpu-usage >= 95.0;System: EFGH ,DC: BDC ,MetricName: mssql-sqldb-cpu-usage ,Application: DASHBOARD-DB-MSSQL-WLS-DASHBOARD, Host: DB-HOST-01",
-        ),
+        # (
+        #     "Service DC",
+        #     "Reason: 3 hosts have oracle-db-gg-lag >= 510.0, Configured Host Capacity - 10;System: ABDC, DC: BDC, MetricName: oracle-db-gg-lag, Application: SPLEX-Common-Operations",
+        # ),
+        # (
+        #     "System Instance",
+        #     "Reason: mssql-sqldb-cpu-usage >= 95.0;System: EFGH ,DC: BDC ,MetricName: mssql-sqldb-cpu-usage ,Application: DASHBOARD-DB-MSSQL-WLS-DASHBOARD, Host: DB-HOST-01",
+        # ),
         # (
         #     "System Instance",
         #     "Reason: oracle-db-session-blocker >= 1000.0;System: IJKL ,DC: AWS-E ,MetricName: oracle-db-session-blocker ,Application: Databases-MESSAGING, Host: db.example.com:2055",
