@@ -314,12 +314,34 @@ class ProposalOutput(TypedDict):
 class ApprovalRequest(TypedDict):
     request_id: str
     decision: DecisionSnapshot
+    action_policy_decision: ActionPolicyDecision
+
+    # Incident identity / source context
+    incident_id: str
+    incident_raw: str
     service: str
     env: ENVIRONMENT
+    timestamp_utc: str
+
+    # Approval context
     proposed_actions: list[str]
     evidence: list[str]
-    approval_question: str
-    safety_notes: list[str]
+    blast_radius: BlastRadiusLevel
+    required_human_role: HumanRole
+    reasons: list[str]
+
+    # Human guidance
+    notes: list[str]
+    questions: list[str]
+
+ApprovalStatus = Literal["APPROVED", "REJECTED", "PENDING"]
+
+class ApprovalResponse(TypedDict, total=False):
+    request_id: str
+    status: ApprovalStatus
+    responder: str
+    reason: str
+    timestamp_utc: str
 
 
 class InvestigationRequest(TypedDict):
@@ -426,6 +448,7 @@ class AgentState(TypedDict, total=False):
     # Correlation / identity
     trace_id: str
     incident_id: str
+    thread_id: str  # Graph execution thread id (for pause/resume HITL runs on same incident)
 
     # IMPORTANT: PRDB primary key for the Hawkeye incident when 1:1 exists
     prdb_id: str | None  # keep optional because not all PRDB rows come from HE
@@ -473,8 +496,13 @@ class AgentState(TypedDict, total=False):
     
     # HITL routes
     approval_request: ApprovalRequest
+    approval_response: ApprovalResponse
+
     investigation_request: InvestigationRequest
     sme_review_request: SMEReviewRequest
+
+    # Lifecycle events (for audit and debugging; store references, not full data)
+    lifecycle_event: dict[str, Any]
 
     # Tooling & execution safety
     tool_step: int

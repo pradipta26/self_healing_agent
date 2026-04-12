@@ -3,7 +3,7 @@ config_version: 1.0.0
 env_variables:
   SHA_ENV: DEV
   EMAILS: pradipta26@gmail.com
-  AUTONOMY_MODE: SHADOW
+  AUTONOMY_MODE: LIVE # SHADOW
   KILL_SWITCH_STATE: DISABLED
   # Postgres DB connection:
   DB_HOST: 127.0.0.1
@@ -15,6 +15,8 @@ env_variables:
   # GOOGLE_API_KEY is directly set in system env variable
   LLM_MODEL: gemini-2.5-flash
   USE_VERTEX_AI: False
+  HITL_APPROVAL_TTL_SECONDS: 1800 # 30 minutes
+
 validation_schema:
   schema_version: 1.0.0
   description: Validation contract for parsed structured_input payloads.

@@ -1,4 +1,17 @@
+## ======================Command Handy Snippets======================================================
+SELECT * FROM public.prdb_incident_parent
+ORDER BY id ASC 
 
+SELECT * FROM public.prdb_incident_chunk
+ORDER BY id ASC 
+
+SELECT * FROM  public.decision_log
+
+
+DELETE FROM public.prdb_incident_chunk;
+DELETE FROM public.prdb_incident_parent;
+DELETE FROM public.decision_log;
+## ============================================================
 
 -- PostgreSQL + pgvector schema for Self-Healing Agent
 -- Purpose:
@@ -272,3 +285,81 @@ SELECT
 FROM prdb_incident_chunk c
 JOIN prdb_incident_parent p
   ON p.id = c.parent_id;
+
+-- ============================================================
+-- 5. HITL approval request table
+DROP TABLE IF EXISTS approval_request;
+
+CREATE TABLE approval_request (
+    id BIGSERIAL PRIMARY KEY,
+
+    -- External correlation (UI/API)
+    request_id TEXT NOT NULL UNIQUE,
+
+    -- Link to immutable decision log
+    decision_id TEXT NOT NULL
+        REFERENCES decision_log(decision_id),
+
+    -- REQUIRED for LangGraph resume
+    thread_id TEXT NOT NULL,
+
+    -- HITL state
+    status TEXT NOT NULL CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+
+    -- Who should act
+    required_human_role TEXT NOT NULL,
+
+    -- Payloads
+    approval_request_payload JSONB NOT NULL,
+    workflow_state_snapshot JSONB NOT NULL,
+
+    -- Human response
+    reviewer TEXT,
+    review_reason TEXT,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    responded_at TIMESTAMPTZ
+);
+
+-- Fast lookup during resume
+CREATE INDEX idx_approval_request_request_id
+ON approval_request (request_id);
+
+-- Join / analytics
+CREATE INDEX idx_approval_request_decision_id
+ON approval_request (decision_id);
+
+-- Pending queue (very important for UI later)
+CREATE INDEX idx_approval_request_status
+ON approval_request (status);
+
+-- Resume optimization
+CREATE INDEX idx_approval_request_thread_id
+ON approval_request (thread_id);
+
+-- ============================================================
+-- 6. Decision lifecycle events table
+--    To track the sequence of events for each decision, including proposal generation, HITL approval, execution, and feedback.
+CREATE TABLE IF NOT EXISTS decision_lifecycle_event (
+    id BIGSERIAL PRIMARY KEY,
+
+    decision_log_id BIGINT NOT NULL REFERENCES decision_log(id) ON DELETE CASCADE,
+    decision_id TEXT NOT NULL,
+
+    event_type TEXT NOT NULL,
+    event_status TEXT,
+    stage_name TEXT,
+    actor_type TEXT,      -- SYSTEM / HUMAN
+    actor_id TEXT,
+
+    request_id TEXT,
+    related_entity_id TEXT,
+
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    notes JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    timestamp_utc TIMESTAMPTZ NOT NULL,
+    inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
