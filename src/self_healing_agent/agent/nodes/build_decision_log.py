@@ -80,7 +80,7 @@ def build_decision_log(state: AgentState) -> dict[str, Any]:
 
     autonomy_mode = state.get("autonomy_mode", "OFF")
     kill_switch_state = state.get("kill_switch_state", "DISABLED")
-
+    action_policy = state.get("action_policy_decision", {})
     now_ms = int(time() * 1000)
     start_ms = state.get("decision_start_time_ms")
     decision_latency_ms = None
@@ -121,13 +121,13 @@ def build_decision_log(state: AgentState) -> dict[str, Any]:
             "grounding": {
                 "verdict": state.get("grounding_check", {}).get("verdict"),
             },
-            "actionability": { # state.get("context_validation", {}).get("facts", {}).get("action_families", []),
-                "families": _derive_action_families(state.get("context_validation", {})),
-                "allowed": state.get("proposal_output", {}).get("approval_required", True) == False,
-            },
             "autonomy": {
                 "mode": state.get("autonomy_mode"),
-                "effective_level": "L1" if state.get("autonomy_mode") == "SHADOW" else "L2" if state.get("autonomy_mode") == "LIVE" else "L0",
+                "execution_mode": action_policy.get("execution_mode"),
+                "effective_level": action_policy.get("effective_autonomy_level"),
+                "allowed": action_policy.get("allowed"),
+                "blast_radius": action_policy.get("blast_radius"),
+                "action_families": action_policy.get("action_families"),
             }
         },
 

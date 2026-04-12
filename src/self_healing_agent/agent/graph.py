@@ -14,8 +14,17 @@ from self_healing_agent.agent.nodes.build_decision import build_decision
 from self_healing_agent.agent.nodes.evaluate_action_policy import evaluate_action_policy
 from self_healing_agent.agent.nodes.build_proposal import build_proposal_output
 from self_healing_agent.agent.nodes.build_investigation_request import build_investigation_request
+from self_healing_agent.agent.nodes.build_approval_request import build_approval_request
 from self_healing_agent.agent.nodes.build_decision_log import build_decision_log
 from self_healing_agent.agent.nodes.persist_decision_log import persist_decision_log
+from self_healing_agent.agent.nodes.persist_approval_request import persist_approval_request
+from self_healing_agent.agent.nodes.build_approval_requested_event import build_approval_requested_event
+from self_healing_agent.agent.nodes.build_approval_response_event import build_approval_response_event
+from self_healing_agent.agent.nodes.persist_lifecycle_event import persist_lifecycle_event
+from self_healing_agent.agent.nodes.hitl_approval import hitl_approval
+from self_healing_agent.agent.nodes.pre_execution_guard import pre_execution_guard
+from self_healing_agent.agent.nodes.execute_action import execute_action
+from self_healing_agent.agent.nodes.validate_action_result import validate_action_result
 from self_healing_agent.agent.nodes.error_notification import send_error_notification
 from self_healing_agent.agent.router.router_functions import (
     parse_raw_incident_text_router,
@@ -25,16 +34,24 @@ from self_healing_agent.agent.router.router_functions import (
     retrieval_policy_router,
     invoke_llm_router,
     grounding_check_router,
-    # build_decision_router,
     action_policy_router,
+    decision_log_router,
+    persist_approval_request_router,
+    hitl_approval_router,
+    validate_action_result_router,
+    persist_approval_requested_event_router,
+    build_approval_response_event_router,
+    persist_approval_response_event_router,
+    pre_execution_guard_router,
+    execute_action_router,
 )
 
 
-def build_graph():
+def build_graph(checkpointer=None):
     graph_builder = StateGraph(AgentState)
 
+    # Define nodes
     graph_builder.add_node("parse_raw_incident_text", parse_raw_incident_details)
-    graph_builder.add_node("send_error_notification", send_error_notification)
     graph_builder.add_node("validate_input", validate_input)
     graph_builder.add_node("retrieve_documents", retrieve_documents)
     graph_builder.add_node("validate_context", validate_context)
@@ -47,9 +64,23 @@ def build_graph():
     graph_builder.add_node("evaluate_action_policy", evaluate_action_policy)
     graph_builder.add_node("build_proposal_output", build_proposal_output)
     graph_builder.add_node("build_investigation_request", build_investigation_request)
+    graph_builder.add_node("build_approval_request", build_approval_request)
     graph_builder.add_node("build_decision_log", build_decision_log)
     graph_builder.add_node("persist_decision_log", persist_decision_log)
-    
+    graph_builder.add_node("persist_approval_request", persist_approval_request)
+
+    graph_builder.add_node("build_approval_requested_event", build_approval_requested_event)
+    graph_builder.add_node("persist_lifecycle_event_approval_requested", persist_lifecycle_event)
+    graph_builder.add_node("build_approval_response_event", build_approval_response_event)
+    graph_builder.add_node("persist_lifecycle_event_approval_response", persist_lifecycle_event)
+
+    graph_builder.add_node("hitl_approval", hitl_approval)
+    graph_builder.add_node("pre_execution_guard", pre_execution_guard)
+    graph_builder.add_node("execute_action", execute_action)
+    graph_builder.add_node("validate_action_result", validate_action_result)
+    graph_builder.add_node("send_error_notification", send_error_notification)
+
+    # Define edges (with routing logic where needed)
     graph_builder.add_edge(START, "parse_raw_incident_text")
 
     graph_builder.add_conditional_edges(
@@ -87,7 +118,7 @@ def build_graph():
         {
             "invoke_llm": "invoke_llm",
             "query_rewrite_and_retry": "query_rewrite_and_retry",
-            "build_decision": "build_decision",
+            "build_investigation_request": "build_investigation_request",
         },
     )
 
@@ -121,27 +152,115 @@ def build_graph():
     graph_builder.add_edge("grounding_policy_decision", "build_decision")
     graph_builder.add_edge("build_decision", "evaluate_action_policy")
 
-    # graph_builder.add_conditional_edges(
-    #     "build_decision",
-    #     build_decision_router,
-    #     {
-    #         "build_proposal_output": "build_proposal_output",
-    #         "build_investigation_request": "build_investigation_request",
-    #     },
-    # )
     graph_builder.add_conditional_edges(
         "evaluate_action_policy",
         action_policy_router,
         {
+            "pre_execution_guard": "pre_execution_guard",
             "build_proposal_output": "build_proposal_output",
+            "build_approval_request": "build_approval_request",
             "build_investigation_request": "build_investigation_request",
         },
     )
 
     graph_builder.add_edge("build_proposal_output", "build_decision_log")
-    graph_builder.add_edge("build_investigation_request", "build_decision_log")
+    graph_builder.add_edge("build_approval_request", "build_decision_log")
+    # graph_builder.add_edge("build_investigation_request", "build_decision_log")
+
     graph_builder.add_edge("build_decision_log", "persist_decision_log")
-    graph_builder.add_edge("persist_decision_log", END)
+
+    graph_builder.add_conditional_edges(
+        "persist_decision_log",
+        decision_log_router,
+        {
+            "END": END,
+            "persist_approval_request": "persist_approval_request",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "persist_approval_request",
+        persist_approval_request_router,
+        {
+            "build_approval_requested_event": "build_approval_requested_event",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_edge(
+        "build_approval_requested_event",
+        "persist_lifecycle_event_approval_requested",
+    )
+    graph_builder.add_conditional_edges(
+        "persist_lifecycle_event_approval_requested",
+        persist_approval_requested_event_router,
+        {
+            "hitl_approval": "hitl_approval",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "hitl_approval",
+        hitl_approval_router,
+        {
+            "build_approval_response_event": "build_approval_response_event",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "build_approval_response_event",
+        build_approval_response_event_router,
+        {
+            "persist_lifecycle_event_approval_response": "persist_lifecycle_event_approval_response",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "persist_lifecycle_event_approval_response",
+        persist_approval_response_event_router,
+        {
+            "pre_execution_guard": "pre_execution_guard",
+            "build_investigation_request": "build_investigation_request",
+            "send_error_notification": "send_error_notification",
+            "END": END,
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "pre_execution_guard",
+        pre_execution_guard_router,
+        {
+            "execute_action": "execute_action",
+            "build_investigation_request": "build_investigation_request",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "execute_action",
+        execute_action_router,
+        {
+            "validate_action_result": "validate_action_result",
+            "build_investigation_request": "build_investigation_request",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "validate_action_result",
+        validate_action_result_router,
+        {
+            "END": END,
+            "build_investigation_request": "build_investigation_request",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_edge("build_investigation_request", END)
     graph_builder.add_edge("send_error_notification", END)
 
-    return graph_builder.compile()
+    return graph_builder.compile(checkpointer=checkpointer)

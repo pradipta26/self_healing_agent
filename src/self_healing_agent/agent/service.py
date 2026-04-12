@@ -1,4 +1,3 @@
-# self_healing_agent/src/self_healing_agent/agent/service.py
 import os
 import json
 from typing import Any
@@ -8,13 +7,26 @@ import time
 from self_healing_agent.agent.graph import build_graph
 from self_healing_agent.core.models import IncidentPayload
 from self_healing_agent.agent.state import AgentState
+from self_healing_agent.config.config_loader import load_env_from_config
+from functools import lru_cache
+from langgraph.checkpoint.memory import InMemorySaver
+
+load_env_from_config("dev")
+
+# InMemorySaver is a temporary V1 checkpointer for local HITL testing, to be replaced by a durable checkpointer later.
+@lru_cache(maxsize=1)
+def get_graph():
+    checkpointer = InMemorySaver()
+    return build_graph(checkpointer=checkpointer)
 
 def run_incident(payload: IncidentPayload) -> dict[str, Any]:
 
     start_time_ms = int(time.time() * 1000)
+    thread_id = str(uuid.uuid4())
     state: AgentState = {
         "trace_id": str(uuid.uuid4()),
         "incident_id": str(uuid.uuid4()),
+        "thread_id": thread_id,
         "incident_raw": payload.incident_details,
         "warnings": [],
         "trace": [],
@@ -26,8 +38,9 @@ def run_incident(payload: IncidentPayload) -> dict[str, Any]:
         "decision_start_time_ms": start_time_ms,
         "timestamp_utc": datetime.now(timezone.utc).isoformat()
     }
-    graph = build_graph()
-    response = graph.invoke(state)
+    graph = get_graph()
+    config = {"configurable": {"thread_id": thread_id}}
+    response = graph.invoke(state, config=config)
     return response
 
 

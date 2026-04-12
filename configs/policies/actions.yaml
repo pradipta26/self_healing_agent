@@ -5,7 +5,7 @@ actions:
     allowed: true
     default_autonomy_level: L2
     execution_mode_by_env:
-      DEV: AUTO_EXECUTE
+      DEV: APPROVAL_REQUIRED # AUTO_EXECUTE
       STAGING: APPROVAL_REQUIRED
       CANARY: APPROVAL_REQUIRED
       PROD: APPROVAL_REQUIRED

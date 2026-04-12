@@ -1,10 +1,11 @@
 import os
 import sys
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 
 from self_healing_agent import __version__
-from self_healing_agent.core.models import IncidentPayload
+from self_healing_agent.core.models import IncidentPayload, HitlResponsePayload
+from self_healing_agent.agent.process_approval_response import resume_incident, validate_request_id_exists
 from self_healing_agent.agent.service import run_incident
 from self_healing_agent.config.config_loader import load_env_from_config
 
@@ -58,10 +59,28 @@ def create_app() -> FastAPI:
     def ingest_incident(payload: IncidentPayload) -> dict[str, object]:
         response =run_incident(payload)
         return {
-            "status": "accepted",
-            "payload": response,
+            "status": "OK"
         }
 
+    @app.post("/hitl-approval")
+    async def submit_hitl_approval(
+        payload: HitlResponsePayload,
+        background_tasks: BackgroundTasks,
+    ) -> dict[str, object]:
+        if not validate_request_id_exists(payload.request_id):
+            return {
+                "status": "rejected",
+                "request_id": payload.request_id,
+                "message": "request_id is invalid",
+            }
+
+        background_tasks.add_task(resume_incident, payload)
+
+        return {
+            "status": "accepted",
+            "request_id": payload.request_id,
+        }
+    
     return app
 
 
