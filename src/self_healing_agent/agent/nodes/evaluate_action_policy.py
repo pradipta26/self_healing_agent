@@ -5,7 +5,7 @@ from typing import Any
 from self_healing_agent.agent.state import AgentState
 from self_healing_agent.config.config_loader import load_yaml_config
 from self_healing_agent.policy.action_policy_resolver import resolve_action_policy
-
+from self_healing_agent.agent.tools.registry import AVAILABLE_TOOL_FAMILIES
 
 def evaluate_action_policy(state: AgentState) -> dict[str, Any]:
     warnings = list(state.get("warnings", []))

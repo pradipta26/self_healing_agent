@@ -117,28 +117,116 @@ def pre_execution_guard_router(state: AgentState):
 
     guard = state.get("pre_execution_guard", {})
     if guard.get("ok"):
-        return "execute_action"
+        return "prepare_tool_call"
 
     return "build_investigation_request"
 
 
-def execute_action_router(state: AgentState):
+# def prepare_tool_call_router(state: AgentState):
+#     if state.get("error_flag", False):
+#         return "send_error_notification"
+
+#     return "execute_action"
+
+
+
+# def execute_action_router(state: AgentState):
+#     if state.get("error_flag", False):
+#         return "send_error_notification"
+
+#     tool_result = state.get("tool_result", {})
+#     if tool_result.get("ok"):
+#         return "validate_action_result"
+
+#     return "build_investigation_request"
+
+
+
+
+
+def prepare_tool_call_router(state: AgentState):
     if state.get("error_flag", False):
         return "send_error_notification"
 
-    tool_result = state.get("tool_result", {})
-    if tool_result.get("ok"):
-        return "validate_action_result"
+    return "execute_tool"
 
-    return "build_investigation_request"
+
+def execute_tool_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+    return "tool_retry_gate"
+
+
+def tool_retry_gate_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_tool_execution_event"
+
+
+def verify_tool_output_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_tool_output_verification_event"
 
 
 def validate_action_result_router(state: AgentState):
     if state.get("error_flag", False):
         return "send_error_notification"
 
-    verification = state.get("verification_result", {})
+    return "build_action_validation_event"
+
+
+def build_tool_execution_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_lifecycle_event_tool_execution"
+
+
+def persist_tool_execution_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    decision = state.get("tool_retry_decision", "NO_RETRY")
+    if decision == "RETRY_TOOL":
+        return "execute_tool"
+
+    return "verify_tool_output"
+
+
+def build_tool_output_verification_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_lifecycle_event_tool_output_verification"
+
+
+def persist_tool_output_verification_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    verification = state.get("tool_verification_result", {})
     if verification.get("ok"):
+        return "validate_action_result"
+
+    return "build_investigation_request"
+
+
+def build_action_validation_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_lifecycle_event_action_validation"
+
+
+def persist_action_validation_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    action_validation = state.get("action_verification_result", {})
+    if action_validation.get("ok"):
         return "END"
 
     return "build_investigation_request"

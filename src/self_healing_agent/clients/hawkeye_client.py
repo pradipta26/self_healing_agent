@@ -3,54 +3,79 @@ from __future__ import annotations
 from typing import Any
 
 
-# ------------------------------------------------------------------
-# Dummy in-memory store (simulates Hawkeye backend)
-# ------------------------------------------------------------------
-# NOTE: This is only for local testing.
-# Replace with real API calls later.
+_INCIDENT_STORE: dict[str, dict[str, Any]] = {}
 
 
-# ------------------------------------------------------------------
-# 1. Get incident runtime status
-# ------------------------------------------------------------------
 def get_incident_runtime_status(incident_id: str) -> dict[str, Any]:
-    """
-    Simulates fetching incident status from Hawkeye.
+    incident = _INCIDENT_STORE.get(incident_id)
 
-    Possible statuses:
-        - OPEN
-        - PROCESSING
-        - CLOSED
-
-    Returns:
-    {
-        "incident_id": str,
-        "status": str,
-        "owner": str | None
-    }
-    """
+    if not incident:
+        return {
+            "incident_id": incident_id,
+            "status": "OPEN",
+            "owner": None,
+        }
 
     return {
         "incident_id": incident_id,
-        "status": "OPEN",
-        "owner": None,
+        "status": incident.get("status", "OPEN"),
+        "owner": incident.get("owner"),
     }
 
 
-# ------------------------------------------------------------------
-# 2. Claim incident if OPEN (compare-and-set semantics)
-# ------------------------------------------------------------------
 def claim_incident_if_open(incident_id: str, actor_id: str) -> dict[str, Any]:
-    """
-    Dummy compare-and-set style ownership claim.
+    incident = _INCIDENT_STORE.get(incident_id)
 
-    In real implementation:
-    - if current status == OPEN, set to PROCESSING with owner=actor_id
-    - else return current owner/status
-    """
+    if not incident:
+        _INCIDENT_STORE[incident_id] = {
+            "status": "PROCESSING",
+            "owner": actor_id,
+        }
+        return {
+            "incident_id": incident_id,
+            "claimed": True,
+            "status": "PROCESSING",
+            "owner": actor_id,
+        }
+
+    current_status = str(incident.get("status", "OPEN")).upper()
+    current_owner = incident.get("owner")
+
+    if current_status == "OPEN":
+        incident["status"] = "PROCESSING"
+        incident["owner"] = actor_id
+        return {
+            "incident_id": incident_id,
+            "claimed": True,
+            "status": "PROCESSING",
+            "owner": actor_id,
+        }
+
     return {
         "incident_id": incident_id,
-        "claimed": True,
-        "status": "PROCESSING",
-        "owner": actor_id,
+        "claimed": False,
+        "status": current_status,
+        "owner": current_owner,
+    }
+
+
+def update_incident_status(
+    incident_id: str,
+    status: str,
+    owner: str | None = None,
+) -> dict[str, Any]:
+    normalized_status = status.strip().upper()
+
+    if normalized_status not in {"OPEN", "PROCESSING", "CLOSED"}:
+        raise ValueError(f"Unsupported incident status: {status}")
+
+    incident = _INCIDENT_STORE.get(incident_id, {})
+    incident["status"] = normalized_status
+    incident["owner"] = owner
+    _INCIDENT_STORE[incident_id] = incident
+
+    return {
+        "incident_id": incident_id,
+        "status": normalized_status,
+        "owner": owner,
     }

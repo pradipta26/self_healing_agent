@@ -310,6 +310,11 @@ class ProposalOutput(TypedDict):
     proposals: list[str]
     approval_required: bool
 
+class ExecutionPolicyFingerprint(TypedDict):
+    kill_switch_state: Literal["ENABLED", "DISABLED"]
+    autonomy_mode: Literal["OFF", "SHADOW", "LIVE"]
+    effective_autonomy_level: AutonomyLevel
+    execution_mode: ActionExecutionMode
 
 class ApprovalRequest(TypedDict):
     request_id: str
@@ -448,6 +453,7 @@ class AgentState(TypedDict, total=False):
     # Correlation / identity
     trace_id: str
     incident_id: str
+    source_incident_id: str # e.g., Hawkeye incident id for correlation
     thread_id: str  # Graph execution thread id (for pause/resume HITL runs on same incident)
 
     # IMPORTANT: PRDB primary key for the Hawkeye incident when 1:1 exists
@@ -497,6 +503,7 @@ class AgentState(TypedDict, total=False):
     # HITL routes
     approval_request: ApprovalRequest
     approval_response: ApprovalResponse
+    initial_execution_policy_fingerprint: ExecutionPolicyFingerprint| None
 
     investigation_request: InvestigationRequest
     sme_review_request: SMEReviewRequest
@@ -511,7 +518,9 @@ class AgentState(TypedDict, total=False):
     tool_call: ToolCall
     tool_result: ToolResult
     tool_trigger_codes: list[TriggerCode]
-    verification_result: VerificationResult
+    tool_verification_result: VerificationResult
+    tool_failure_classification: dict[str, Any]  # e.g., {"reason_code": "TOOL_TIMEOUT", "retryable": True}
+    action_verification_result: VerificationResult
     diagnostics_input: DiagnosticsInput
     rollback_plan: RollbackPlan
 

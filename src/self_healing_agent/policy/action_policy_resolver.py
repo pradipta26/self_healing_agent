@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from self_healing_agent.agent.tools.registry import AVAILABLE_TOOL_FAMILIES
 from self_healing_agent.agent.state import (
     ActionPolicyDecision,
     BlastRadiusLevel,
@@ -29,7 +30,7 @@ _BLAST_RADIUS_RANK = {
 
 def _derive_action_families(context_validation: dict[str, Any]) -> list[str]:
     raw_families = context_validation.get("facts", {}).get("action_families", [])
-    families = sorted({f for f in raw_families if f != "OTHER"})
+    families = sorted({str(f).upper() for f in raw_families if str(f).upper() != "OTHER"})
     return families or ["UNKNOWN"]
 
 
@@ -103,6 +104,23 @@ def _execution_mode_to_level(execution_mode: str) -> str:
     return "L3"
 
 
+def _proposal_only_result(
+    *,
+    blast_radius: BlastRadiusLevel,
+    action_families: list[str],
+    reasons: list[str],
+) -> ActionPolicyDecision:
+    return {
+        "allowed": True,
+        "effective_autonomy_level": "L1",
+        "execution_mode": "PROPOSE_ONLY",
+        "required_human_role": "NONE",
+        "blast_radius": blast_radius,
+        "action_families": action_families,
+        "reasons": reasons,
+    }
+
+
 def _blast_radius_allowed(derived_radius: str, max_radius: str) -> bool:
     derived_rank = _BLAST_RADIUS_RANK.get(derived_radius, 99)
     max_rank = _BLAST_RADIUS_RANK.get(max_radius, 99)
@@ -122,7 +140,7 @@ def resolve_action_policy(
     service_domain = structured_input.get("service_domain", "")
     env = structured_input.get("env", "DEV")
 
-    action_families = _derive_action_families(context_validation)
+    action_families = [str(f).upper() for f in _derive_action_families(context_validation)]
     blast_radius = _derive_blast_radius(structured_input)
 
     reasons: list[str] = []
@@ -198,20 +216,17 @@ def resolve_action_policy(
     actions_root = actions_policy.get("actions", {})
     resolved_roles: list[HumanRole] = []
 
+    proposal_only_families: list[str] = []
+
     for family in action_families:
         action_policy = actions_root.get(family) or actions_root.get("UNKNOWN", {})
 
         if family in blocked_action_families:
-            reasons.append(f"Service policy blocks action family {family}.")
-            return {
-                "allowed": False,
-                "effective_autonomy_level": "L0",
-                "execution_mode": "BLOCKED",
-                "required_human_role": "INVESTIGATOR",
-                "blast_radius": blast_radius,
-                "action_families": action_families,
-                "reasons": reasons,
-            }
+            proposal_only_families.append(family)
+            reasons.append(
+                f"Service policy blocks autonomous execution for action family {family}; downgrading to proposal only."
+            )
+            continue
 
         if not action_policy.get("allowed", False):
             reasons.append(f"Action family {family} is not allowed by policy.")
@@ -224,36 +239,22 @@ def resolve_action_policy(
                 "action_families": action_families,
                 "reasons": reasons,
             }
-
+ 
         required_grounding = action_policy.get("required_grounding")
         if required_grounding and grounding_check.get("verdict") != required_grounding:
+            proposal_only_families.append(family)
             reasons.append(
-                f"Action family {family} requires grounding verdict {required_grounding}."
+                f"Action family {family} requires grounding verdict {required_grounding}; downgrading to proposal only."
             )
-            return {
-                "allowed": False,
-                "effective_autonomy_level": "L0",
-                "execution_mode": "BLOCKED",
-                "required_human_role": _get_required_human_role_for_block(action_policy),
-                "blast_radius": blast_radius,
-                "action_families": action_families,
-                "reasons": reasons,
-            }
+            continue
 
         required_context_validity = set(action_policy.get("required_context_validity", []))
         if required_context_validity and context_validation.get("validity") not in required_context_validity:
+            proposal_only_families.append(family)
             reasons.append(
-                f"Action family {family} requires context validity in {sorted(required_context_validity)}."
+                f"Action family {family} requires context validity in {sorted(required_context_validity)}; downgrading to proposal only."
             )
-            return {
-                "allowed": False,
-                "effective_autonomy_level": "L0",
-                "execution_mode": "BLOCKED",
-                "required_human_role": _get_required_human_role_for_block(action_policy),
-                "blast_radius": blast_radius,
-                "action_families": action_families,
-                "reasons": reasons,
-            }
+            continue
 
         action_default_level = action_policy.get("default_autonomy_level", "L1")
         effective_level = _more_restrictive_level(effective_level, action_default_level)
@@ -274,20 +275,30 @@ def resolve_action_policy(
 
         max_blast_radius = action_policy.get("max_blast_radius", "UNKNOWN")
         if not _blast_radius_allowed(blast_radius, max_blast_radius):
+            proposal_only_families.append(family)
             reasons.append(
-                f"Derived blast radius {blast_radius} exceeds policy max {max_blast_radius} for {family}."
+                f"Derived blast radius {blast_radius} exceeds policy max {max_blast_radius} for {family}; downgrading to proposal only."
             )
-            return {
-                "allowed": False,
-                "effective_autonomy_level": "L0",
-                "execution_mode": "BLOCKED",
-                "required_human_role": _get_required_human_role_for_block(action_policy),
-                "blast_radius": blast_radius,
-                "action_families": action_families,
-                "reasons": reasons,
-            }
+            continue
+
+        if family not in AVAILABLE_TOOL_FAMILIES:
+            proposal_only_families.append(family)
+            reasons.append(
+                f"Tool not registered for action family {family}; downgrading to proposal only."
+            )
+            continue
 
         resolved_roles.append(_get_required_human_role_for_block(action_policy))
+
+    if proposal_only_families:
+        effective_level = _more_restrictive_level(effective_level, "L1")
+
+    if effective_level == "L1" and proposal_only_families:
+        return _proposal_only_result(
+            blast_radius=blast_radius,
+            action_families=action_families,
+            reasons=reasons,
+        )
 
     # --------------------------------------------------
     # final mode

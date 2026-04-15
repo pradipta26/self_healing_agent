@@ -363,3 +363,19 @@ CREATE TABLE IF NOT EXISTS decision_lifecycle_event (
     timestamp_utc TIMESTAMPTZ NOT NULL,
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE incident_workflow_lock (
+    hawkeye_incident_id VARCHAR(128) PRIMARY KEY,
+    incident_id VARCHAR(128) NOT NULL,
+    workflow_status VARCHAR(32) NOT NULL,  -- ACTIVE | COMPLETED | FAILED | CANCELLED
+
+    thread_id VARCHAR(128) NOT NULL,
+    decision_id VARCHAR(128),
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Optional index for status queries
+CREATE INDEX idx_incident_workflow_status
+ON incident_workflow_lock (workflow_status);

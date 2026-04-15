@@ -4,7 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from self_healing_agent.agent.state import AgentState, ApprovalRequest
-
+from self_healing_agent.agent.nodes.helpers.execution_policy_fingerprint import build_execution_policy_fingerprint
 
 def _build_notes(
     decision: dict[str, Any],
@@ -81,6 +81,7 @@ def build_approval_request(state: AgentState) -> dict[str, Any]:
     proposed_actions = model_output.get("remediation", [])
     evidence = _build_evidence_snapshot(state.get("grounding_check", {}), 
                                         state.get("filtered_evidence", []))
+    initial_execution_policy_fingerprint = build_execution_policy_fingerprint(state)
     approval_request: ApprovalRequest = {
         "request_id": str(uuid4()),
         "decision": decision,
@@ -109,6 +110,7 @@ def build_approval_request(state: AgentState) -> dict[str, Any]:
 
     return {
         "approval_request": approval_request,
+        "initial_execution_policy_fingerprint": initial_execution_policy_fingerprint,
         "warnings": warnings,
         "trace": trace,
         "error_flag": False,

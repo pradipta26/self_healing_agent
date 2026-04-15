@@ -5,7 +5,7 @@ import os
 from typing import Any
 
 from self_healing_agent.agent.state import AgentState
-
+from self_healing_agent.agent.nodes.helpers.execution_policy_fingerprint import build_execution_policy_fingerprint
 from self_healing_agent.clients.hawkeye_client import (
     get_incident_runtime_status,
     claim_incident_if_open,
@@ -25,18 +25,22 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
-def _build_execution_context_fingerprint(state: AgentState) -> dict[str, Any]:
-    structured_input = state.get("structured_input", {})
+# def _build_execution_policy_fingerprint(state: AgentState) -> dict[str, Any]:
+#     """
+#     Build execution control-plane fingerprint.
 
-    return {
-        "service": structured_input.get("service_domain"),
-        "env": structured_input.get("env"),
-        "datacenter": structured_input.get("datacenter"),
-        "app_name": structured_input.get("app_name"),
-        "hosts": structured_input.get("hosts", []) or [],
-        "instances": structured_input.get("instances", []) or [],
-        "metric_names": structured_input.get("metric_names", []) or [],
-    }
+#     This captures approval-time execution assumptions that must still hold
+#     before we allow action execution.
+#     """
+#     system_readiness = state.get("system_readiness", {})
+#     action_policy = state.get("action_policy_decision", {})
+
+#     return {
+#         "kill_switch_state": system_readiness.get("kill_switch_state"),
+#         "autonomy_mode": system_readiness.get("autonomy_mode"),
+#         "effective_autonomy_level": action_policy.get("effective_autonomy_level"),
+#         "execution_mode": action_policy.get("execution_mode"),
+#     }
 
 
 def _is_approval_fresh(approval_response: dict[str, Any]) -> tuple[bool, str]:
@@ -82,7 +86,6 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
 
     # 1. Incident still active? / 3. Another actor already owns remediation?
     incident_runtime = get_incident_runtime_status(incident_id)
-
     incident_status = str(incident_runtime.get("status", "UNKNOWN")).strip().upper()
     owner = incident_runtime.get("owner")
 
@@ -100,34 +103,58 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
             "error_flag": False,
             "error_message": None,
         }
+    actor_id = state.get("thread_id", "self_healing_agent")
+    claim_owner = owner
 
     if incident_status == "PROCESSING":
-        trace.append("pre_execution_guard:incident_processing")
+        if owner != actor_id:
+            trace.append("pre_execution_guard:incident_processing_other_owner")
+            return {
+                "pre_execution_guard": {
+                    "ok": False,
+                    "reason": "INCIDENT_ALREADY_PROCESSING",
+                    "incident_status": incident_status,
+                    "owner": owner,
+                },
+                "warnings": warnings,
+                "trace": trace,
+                "error_flag": False,
+                "error_message": None,
+            }
+
+        trace.append("pre_execution_guard:incident_already_claimed_by_same_actor")
+
+    elif incident_status == "OPEN":
+        claim_result = claim_incident_if_open(
+            incident_id=incident_id,
+            actor_id=actor_id,
+        )
+        if not claim_result.get("claimed", False):
+            trace.append("pre_execution_guard:claim_failed")
+            return {
+                "pre_execution_guard": {
+                    "ok": False,
+                    "reason": "INCIDENT_ALREADY_OWNED",
+                    "incident_status": claim_result.get("status", incident_status),
+                    "owner": claim_result.get("owner"),
+                },
+                "warnings": warnings,
+                "trace": trace,
+                "error_flag": False,
+                "error_message": None,
+            }
+
+        claim_owner = claim_result.get("owner")
+        trace.append("pre_execution_guard:incident_claimed")
+
+    else:
+        trace.append("pre_execution_guard:unexpected_incident_status")
         return {
             "pre_execution_guard": {
                 "ok": False,
-                "reason": "INCIDENT_ALREADY_PROCESSING",
+                "reason": "INCIDENT_STATUS_UNKNOWN",
                 "incident_status": incident_status,
                 "owner": owner,
-            },
-            "warnings": warnings,
-            "trace": trace,
-            "error_flag": False,
-            "error_message": None,
-        }
-
-    claim_result = claim_incident_if_open(
-        incident_id=incident_id,
-        actor_id=state.get("thread_id", "self_healing_agent"),
-    )
-    if not claim_result.get("claimed", False):
-        trace.append("pre_execution_guard:claim_failed")
-        return {
-            "pre_execution_guard": {
-                "ok": False,
-                "reason": "INCIDENT_ALREADY_OWNED",
-                "incident_status": incident_status,
-                "owner": claim_result.get("owner"),
             },
             "warnings": warnings,
             "trace": trace,
@@ -144,7 +171,7 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
                 "ok": False,
                 "reason": approval_reason,
                 "incident_status": incident_status,
-                "owner": claim_result.get("owner"),
+                "owner": claim_owner,
             },
             "warnings": warnings,
             "trace": trace,
@@ -161,7 +188,7 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
                 "ok": False,
                 "reason": precondition_result.get("reason", "ACTION_NO_LONGER_NEEDED"),
                 "incident_status": incident_status,
-                "owner": claim_result.get("owner"),
+                "owner": claim_owner,
             },
             "warnings": warnings,
             "trace": trace,
@@ -170,12 +197,15 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
         }
 
     # 4. System state changed?
-    original_fingerprint = (
-        state.get("approval_request", {})
-        .get("action_policy_decision", {})
-        .get("execution_context_fingerprint", {})
-    )
-    current_fingerprint = _build_execution_context_fingerprint(state)
+    # V1 execution-policy drift check:
+    # this compares approval-time execution control assumptions with current state.
+    # (kill-switch, autonomy mode, autonomy level, execution mode)
+    # Future: extend with runtime topology/state drift signals.
+    original_fingerprint = state.get("initial_execution_policy_fingerprint", {})
+    current_fingerprint = build_execution_policy_fingerprint(state)
+
+    if not original_fingerprint:
+        trace.append("pre_execution_guard:missing_original_fingerprint")
 
     state_changed, state_change_reason = _has_system_state_changed(
         original_fingerprint or current_fingerprint,
@@ -188,7 +218,7 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
                 "ok": False,
                 "reason": state_change_reason,
                 "incident_status": incident_status,
-                "owner": claim_result.get("owner"),
+                "owner": claim_owner,
                 "current_fingerprint": current_fingerprint,
             },
             "warnings": warnings,
@@ -203,7 +233,7 @@ def pre_execution_guard(state: AgentState) -> dict[str, Any]:
             "ok": True,
             "reason": "READY_TO_EXECUTE",
             "incident_status": incident_status,
-            "owner": claim_result.get("owner"),
+            "owner": claim_owner,
             "approval_fresh": True,
             "action_needed": True,
             "state_changed": False,
