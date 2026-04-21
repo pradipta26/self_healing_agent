@@ -364,6 +364,99 @@ CREATE TABLE IF NOT EXISTS decision_lifecycle_event (
     inserted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ============================================================
+-- 7. Tool execution log table
+--    To capture detailed records of each tool execution attempt, including retries and outcomes, linked to
+DROP TABLE tool_execution_log;
+
+CREATE TABLE tool_execution_log (
+    id BIGSERIAL PRIMARY KEY,
+
+    -- Core workflow identity
+    decision_id VARCHAR(128) NOT NULL,
+    trace_id VARCHAR(128) NOT NULL,
+    incident_id VARCHAR(128) NOT NULL,
+    source_incident_id VARCHAR(128),
+    thread_id VARCHAR(128) NOT NULL,
+
+    -- Tool execution context
+    execution_phase VARCHAR(32) NOT NULL,   -- FORWARD | ROLLBACK
+    tool_step INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
+
+    tool_name VARCHAR(128) NOT NULL,
+    action_family VARCHAR(128),
+    executor VARCHAR(128),
+    idempotency_key VARCHAR(256) NOT NULL,
+
+    -- Tool input / output
+    tool_args_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_result_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+    -- Outcome
+    ok BOOLEAN NOT NULL,
+    error TEXT,
+    error_code VARCHAR(128),
+
+    -- Failure classification / retry semantics
+    failure_type VARCHAR(32),               -- NONE | TRANSIENT | PERMANENT | UNKNOWN
+    retryable BOOLEAN,
+    retry_decision VARCHAR(32) NOT NULL,    -- RETRY_TOOL | NO_RETRY
+    side_effect_committed BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Trigger / policy signals
+    tool_trigger_codes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    -- Timestamp
+    timestamp_utc TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE INDEX idx_tool_execution_log_decision_id
+ON tool_execution_log (decision_id);
+
+CREATE INDEX idx_tool_execution_log_trace_id
+ON tool_execution_log (trace_id);
+
+CREATE INDEX idx_tool_execution_log_incident_id
+ON tool_execution_log (incident_id);
+
+CREATE INDEX idx_tool_execution_log_source_incident_id
+ON tool_execution_log (source_incident_id);
+
+CREATE INDEX idx_tool_execution_log_tool_name
+ON tool_execution_log (tool_name);
+
+CREATE INDEX idx_tool_execution_log_execution_phase
+ON tool_execution_log (execution_phase);
+
+CREATE INDEX idx_tool_execution_log_retry_decision
+ON tool_execution_log (retry_decision);
+
+CREATE INDEX idx_tool_execution_log_error_code
+ON tool_execution_log (error_code);
+
+CREATE INDEX idx_tool_execution_log_timestamp_utc
+ON tool_execution_log (timestamp_utc);
+
+# Constraints for data integrity
+ALTER TABLE tool_execution_log
+ADD CONSTRAINT chk_tool_execution_phase
+CHECK (execution_phase IN ('FORWARD', 'ROLLBACK'));
+
+ALTER TABLE tool_execution_log
+ADD CONSTRAINT chk_tool_retry_decision
+CHECK (retry_decision IN ('RETRY_TOOL', 'NO_RETRY'));
+
+ALTER TABLE tool_execution_log
+ADD CONSTRAINT chk_tool_failure_type
+CHECK (failure_type IN ('NONE', 'TRANSIENT', 'PERMANENT', 'UNKNOWN'));
+
+
+-- ============================================================
+-- 8. Incident workflow lock table
+--    To manage concurrency and state of incident workflows, ensuring that only one workflow can be active for a given incident at a time.
+DROP TABLE incident_workflow_lock;
 CREATE TABLE incident_workflow_lock (
     hawkeye_incident_id VARCHAR(128) PRIMARY KEY,
     incident_id VARCHAR(128) NOT NULL,

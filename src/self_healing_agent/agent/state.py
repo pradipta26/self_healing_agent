@@ -25,9 +25,9 @@ RollbackStatus = Literal["SKIPPED", "PLANNED", "EXECUTED", "FAILED"]
 class RollbackPlan(TypedDict, total=False):
     status: RollbackStatus
     reason: str
-    actions: list[str]          # compensating steps (read-only for now)
+    actions: list[dict[str, Any]]
     notes: list[str]
-    artifacts: dict[str, Any]   # ids, links, correlation ids, etc.
+    artifacts: dict[str, Any]
 
 
 EscalationType = Literal[
@@ -237,40 +237,59 @@ class DecisionSnapshot(TypedDict):
 class DecisionLog(TypedDict):
     """
     Immutable commit record written exactly once per committed decision.
-    This is NOT a running list of snapshots; it is the audit artifact used for later reconstruction.
+    This is the audit artifact used for later reconstruction and observability.
     """
     # Identity / correlation
     decision_id: str
     trace_id: str
     incident_id: str
+    source_incident_id: str
 
     # Execution mode / safety gates at decision time
     autonomy_mode: Literal["OFF", "SHADOW", "LIVE"]
     kill_switch_state: Literal["ENABLED", "DISABLED"]
-    dry_run: bool  # derived from autonomy_mode
+    dry_run: bool
 
-    # Decision outcome (overlaps with DecisionSnapshot by design)
+    # Decision outcome
     policy_version: str
     route: Literal["PROPOSE", "HITL_APPROVAL", "HITL_INVESTIGATION", "HITL_SME_REVIEW"]
     confidence: Confidence
     actionability: Actionability
     escalation_type: EscalationType
+    summary: str
+    trigger_codes: list[TriggerCode]
 
-    # Policy gates (include blast radius checks here)
-    policy_checks: dict[str, bool]
+    # Retrieval / trust metrics
+    retrieval_score_avg: float | None
+    retrieval_empty: bool
+    conflicting_signals: bool
 
-    # Evidence and intent references (store ids/hashes, not raw text)
+    # Policy gates / snapshots
+    policy_checks: dict[str, Any]
+
+    # Evidence and intent references
     evidence_ref_ids: list[int]
+    evidence_snapshot: list[Any]
     tool_plan_hash: str | None
 
-    # RAG / retrieval references (new)
+    # Execution planning metadata
+    execution_phase: Literal["FORWARD", "ROLLBACK"] | None
+    planned_tool_name: str | None
+    planned_tool_executor: str | None
+
+    # RAG / retrieval references
     rco_summary: str | None
     retrieved_doc_ids: list[str]
     query_rewrite: QueryRewriteArtifact | None
 
     # Metadata
-    timestamp_utc: str          # ISO-8601 (e.g., datetime.now(timezone.utc).isoformat())
-    schema_version: str         # e.g. "v2"
+    timestamp_utc: str
+    schema_version: str
+class ToolFailureClassification(TypedDict):
+    failure_type: Literal["NONE", "TRANSIENT", "PERMANENT", "UNKNOWN"]
+    retryable: bool
+    reason_code: str
+    side_effect_committed: bool
 
 
 # -----------------------------
@@ -394,21 +413,77 @@ class SMEReviewRequest(TypedDict):
 # -----------------------------
 # Tooling & execution safety (existing)
 # -----------------------------
+
 class ToolCall(TypedDict):
     tool_name: str
     args: dict[str, Any]
     idempotency_key: str
 
 
+# ---- Inserted new TypedDicts for tool definition and precondition ----
+class ToolDefinition(TypedDict, total=False):
+    tool_name: str
+    action_family: str
+    executor: str
+    precondition: str | None
+    supports_rollback: bool
+    rollback: dict[str, Any] | None
+
+
+class ToolPreconditionResult(TypedDict):
+    ok: bool
+    reason: str
+    facts: dict[str, Any]
+
+
+
+# ---- Updated ToolResult with richer fields ----
 class ToolResult(TypedDict, total=False):
     ok: bool
     raw: dict[str, Any]
     error: str
+    error_code: str
+    transient: bool
+    side_effect_committed: bool
 
 
 class VerificationResult(TypedDict):
     ok: bool
     details: dict[str, Any]
+
+class ToolExecutionLogRecord(TypedDict, total=False):
+    id: int
+
+    decision_id: str
+    trace_id: str
+    incident_id: str
+    source_incident_id: str | None
+    thread_id: str
+
+    execution_phase: Literal["FORWARD", "ROLLBACK"]
+    tool_step: int
+    attempt: int
+
+    tool_name: str
+    action_family: str | None
+    executor: str | None
+    idempotency_key: str
+
+    tool_args_json: dict[str, Any]
+    raw_result_json: dict[str, Any]
+
+    ok: bool
+    error: str
+    error_code: str
+
+    failure_type: Literal["NONE", "TRANSIENT", "PERMANENT", "UNKNOWN"] | None
+    retryable: bool | None
+    retry_decision: Literal["RETRY_TOOL", "NO_RETRY"]
+    side_effect_committed: bool
+
+    tool_trigger_codes_json: list[str]
+
+    timestamp_utc: str | None
 
 
 class DiagnosticsInput(TypedDict):
@@ -444,8 +519,8 @@ class BlastRadiusAssessment(TypedDict, total=False):
 # -----------------------------
 class AgentState(TypedDict, total=False):
 
-    # Log strat Timestamp
-    processing_start_time_ms: str  # ISO-8601 timestamp of when the state was created/updated
+    # Log start timestamp
+    processing_start_time_utc: str  # ISO-8601 timestamp of when processing began
     # Inputs
     incident_raw: str
     structured_input: StructuredInput
@@ -459,7 +534,7 @@ class AgentState(TypedDict, total=False):
     # IMPORTANT: PRDB primary key for the Hawkeye incident when 1:1 exists
     prdb_id: str | None  # keep optional because not all PRDB rows come from HE
 
-    decision_start_time_ms: int  # ISO-8601 timestamp of when the decision process started (for latency measurement)
+    decision_start_time_ms: int  # epoch milliseconds when decision processing started (for latency measurement)
     decision_id: str | None        # authoritative correlation id for this run's committed decision
     decision_log_id: str | None    # storage id / ref returned by the log sink (if any)
     decision_log: DecisionLog | None    # populated after decision is made; not used for correlation (use decision_log_id instead)
@@ -516,13 +591,19 @@ class AgentState(TypedDict, total=False):
     attempt: int
     tool_retry_decision: Literal["RETRY_TOOL", "NO_RETRY"]
     tool_call: ToolCall
+    tool_definition: ToolDefinition
+    tool_precondition_result: ToolPreconditionResult
     tool_result: ToolResult
     tool_trigger_codes: list[TriggerCode]
     tool_verification_result: VerificationResult
-    tool_failure_classification: dict[str, Any]  # e.g., {"reason_code": "TOOL_TIMEOUT", "retryable": True}
+    tool_failure_classification: ToolFailureClassification
     action_verification_result: VerificationResult
-    diagnostics_input: DiagnosticsInput
-    rollback_plan: RollbackPlan
+    diagnostics_input: DiagnosticsInput | None
+    rollback_plan: RollbackPlan | None
+    execution_phase: Literal["FORWARD", "ROLLBACK"] | None
+    # Tool execution log 
+    tool_execution_log_id: int | None
+    tool_execution_log_record: ToolExecutionLogRecord | None
 
     # Audit / debug breadcrumbs
     warnings: list[str]

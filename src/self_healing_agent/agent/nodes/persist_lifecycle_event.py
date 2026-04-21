@@ -11,6 +11,7 @@ from self_healing_agent.utils.db_utils import get_db_connection
 def _persist_lifecycle_event_record(event: dict[str, Any]) -> None:
     """
     Reusable low-level DB insert helper for decision_lifecycle_event.
+    Shared by both FORWARD and ROLLBACK lifecycle event paths.
     Assumes the table has these columns:
 
         decision_log_id BIGINT NULL
@@ -87,7 +88,8 @@ def _persist_lifecycle_event_record(event: dict[str, Any]) -> None:
 
 def persist_lifecycle_event(state: AgentState) -> dict[str, Any]:
     """
-    Generic graph node.
+    Generic shared graph node for lifecycle-event persistence.
+    Used by both FORWARD and ROLLBACK event builders.
 
     Expects:
         state["lifecycle_event"] = {
@@ -104,6 +106,12 @@ def persist_lifecycle_event(state: AgentState) -> dict[str, Any]:
             "notes": [...],
             "timestamp_utc": ...
         }
+
+    Examples of supported event families include:
+    - approval events
+    - tool execution / tool output verification events
+    - action validation events
+    - rollback execution / rollback verification events
 
     This node only persists one event at a time.
     """

@@ -26,6 +26,11 @@ from self_healing_agent.agent.nodes.build_tool_output_verification_event import 
 from self_healing_agent.agent.nodes.build_action_validation_event import build_action_validation_event
 from self_healing_agent.agent.nodes.persist_lifecycle_event import persist_lifecycle_event
 
+from self_healing_agent.agent.nodes.build_tool_execution_log_start import build_tool_execution_log_start
+from self_healing_agent.agent.nodes.persist_tool_execution_log_start import persist_tool_execution_log_start
+from self_healing_agent.agent.nodes.build_tool_execution_log_finalize import build_tool_execution_log_finalize
+from self_healing_agent.agent.nodes.persist_tool_execution_log_finalize import persist_tool_execution_log_finalize
+
 from self_healing_agent.agent.nodes.hitl_approval import hitl_approval
 from self_healing_agent.agent.nodes.pre_execution_guard import pre_execution_guard
 from self_healing_agent.agent.nodes.prepare_tool_call import prepare_tool_call
@@ -33,6 +38,12 @@ from self_healing_agent.agent.nodes.execute_tool import execute_tool
 from self_healing_agent.agent.nodes.tool_retry_gate import tool_retry_gate
 from self_healing_agent.agent.nodes.verify_tool_output import verify_tool_output
 from self_healing_agent.agent.nodes.validate_action_result import validate_action_result
+
+from self_healing_agent.agent.nodes.rollback_or_investigation import rollback_or_investigation
+from self_healing_agent.agent.nodes.prepare_rollback_tool_call import prepare_rollback_tool_call
+from self_healing_agent.agent.nodes.verify_rollback import verify_rollback
+from self_healing_agent.agent.nodes.build_rollback_verification_event import build_rollback_verification_event
+
 from self_healing_agent.agent.nodes.error_notification import send_error_notification
 
 from self_healing_agent.agent.router.router_functions import (
@@ -52,16 +63,25 @@ from self_healing_agent.agent.router.router_functions import (
     persist_approval_response_event_router,
     pre_execution_guard_router,
     prepare_tool_call_router,
+    build_tool_execution_log_start_router,
+    persist_tool_execution_log_start_router,
     execute_tool_router,
     tool_retry_gate_router,
+    build_tool_execution_log_finalize_router,
+    persist_tool_execution_log_finalize_router,
     verify_tool_output_router,
     validate_action_result_router,
     build_tool_execution_event_router,
-    persist_tool_execution_event_router,
+    persist_lifecycle_event_tool_execution_router,
     build_tool_output_verification_event_router,
     persist_tool_output_verification_event_router,
     build_action_validation_event_router,
     persist_action_validation_event_router,
+    rollback_or_investigation_router,
+    prepare_rollback_tool_call_router,
+    verify_rollback_router,
+    build_rollback_verification_event_router,
+    persist_rollback_verification_event_router,
 )
 
 
@@ -94,6 +114,10 @@ def build_graph(checkpointer=None):
     graph_builder.add_node("persist_lifecycle_event_approval_response", persist_lifecycle_event)
 
     # Tool / execution lifecycle nodes
+    graph_builder.add_node("build_tool_execution_log_start", build_tool_execution_log_start)
+    graph_builder.add_node("persist_tool_execution_log_start", persist_tool_execution_log_start)
+    graph_builder.add_node("build_tool_execution_log_finalize", build_tool_execution_log_finalize)
+    graph_builder.add_node("persist_tool_execution_log_finalize", persist_tool_execution_log_finalize)
     graph_builder.add_node("build_tool_execution_event", build_tool_execution_event)
     graph_builder.add_node("persist_lifecycle_event_tool_execution", persist_lifecycle_event)
     graph_builder.add_node("build_tool_output_verification_event", build_tool_output_verification_event)
@@ -109,7 +133,12 @@ def build_graph(checkpointer=None):
     graph_builder.add_node("tool_retry_gate", tool_retry_gate)
     graph_builder.add_node("verify_tool_output", verify_tool_output)
     graph_builder.add_node("validate_action_result", validate_action_result)
-
+    # Rollback / investigation nodes
+    graph_builder.add_node("rollback_or_investigation", rollback_or_investigation)
+    graph_builder.add_node("prepare_rollback_tool_call", prepare_rollback_tool_call)
+    graph_builder.add_node("verify_rollback", verify_rollback)
+    graph_builder.add_node("build_rollback_verification_event", build_rollback_verification_event)
+    graph_builder.add_node("persist_lifecycle_event_rollback_verification", persist_lifecycle_event)
     # Error handling
     graph_builder.add_node("send_error_notification", send_error_notification)
 
@@ -258,7 +287,6 @@ def build_graph(checkpointer=None):
             "pre_execution_guard": "pre_execution_guard",
             "build_investigation_request": "build_investigation_request",
             "send_error_notification": "send_error_notification",
-            "END": END,
         },
     )
 
@@ -276,6 +304,24 @@ def build_graph(checkpointer=None):
         "prepare_tool_call",
         prepare_tool_call_router,
         {
+            "build_tool_execution_log_start": "build_tool_execution_log_start",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "build_tool_execution_log_start",
+        build_tool_execution_log_start_router,
+        {
+            "persist_tool_execution_log_start": "persist_tool_execution_log_start",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "persist_tool_execution_log_start",
+        persist_tool_execution_log_start_router,
+        {
             "build_tool_execution_event": "build_tool_execution_event",
             "send_error_notification": "send_error_notification",
         },
@@ -292,7 +338,7 @@ def build_graph(checkpointer=None):
 
     graph_builder.add_conditional_edges(
         "persist_lifecycle_event_tool_execution",
-        persist_tool_execution_event_router,
+        persist_lifecycle_event_tool_execution_router,
         {
             "execute_tool": "execute_tool",
             "verify_tool_output": "verify_tool_output",
@@ -312,6 +358,24 @@ def build_graph(checkpointer=None):
     graph_builder.add_conditional_edges(
         "tool_retry_gate",
         tool_retry_gate_router,
+        {
+            "build_tool_execution_log_finalize": "build_tool_execution_log_finalize",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "build_tool_execution_log_finalize",
+        build_tool_execution_log_finalize_router,
+        {
+            "persist_tool_execution_log_finalize": "persist_tool_execution_log_finalize",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "persist_tool_execution_log_finalize",
+        persist_tool_execution_log_finalize_router,
         {
             "build_tool_execution_event": "build_tool_execution_event",
             "send_error_notification": "send_error_notification",
@@ -341,6 +405,7 @@ def build_graph(checkpointer=None):
         persist_tool_output_verification_event_router,
         {
             "validate_action_result": "validate_action_result",
+            "verify_rollback": "verify_rollback",
             "build_investigation_request": "build_investigation_request",
             "send_error_notification": "send_error_notification",
         },
@@ -369,6 +434,55 @@ def build_graph(checkpointer=None):
         persist_action_validation_event_router,
         {
             "END": END,
+            "rollback_or_investigation": "rollback_or_investigation",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "verify_rollback",
+        verify_rollback_router,
+        {
+            "build_rollback_verification_event": "build_rollback_verification_event",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+    
+    graph_builder.add_conditional_edges(
+        "rollback_or_investigation",
+        rollback_or_investigation_router,
+        {
+            "prepare_rollback_tool_call": "prepare_rollback_tool_call",
+            "build_investigation_request": "build_investigation_request",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "prepare_rollback_tool_call",
+        prepare_rollback_tool_call_router,
+        {
+            "build_tool_execution_log_start": "build_tool_execution_log_start",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    # (Obsolete rollback execution event nodes removed)
+
+    graph_builder.add_conditional_edges(
+        "build_rollback_verification_event",
+        build_rollback_verification_event_router,
+        {
+            "persist_lifecycle_event_rollback_verification": "persist_lifecycle_event_rollback_verification",
+            "send_error_notification": "send_error_notification",
+        },
+    )
+
+    graph_builder.add_conditional_edges(
+        "persist_lifecycle_event_rollback_verification",
+        persist_rollback_verification_event_router,
+        {
+            "END": END,
             "build_investigation_request": "build_investigation_request",
             "send_error_notification": "send_error_notification",
         },
@@ -378,3 +492,19 @@ def build_graph(checkpointer=None):
     graph_builder.add_edge("send_error_notification", END)
 
     return graph_builder.compile(checkpointer=checkpointer)
+
+if __name__ == "__main__":
+    # Visualize Graph
+    from pathlib import Path
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    checkpointer = InMemorySaver()
+    graph = build_graph(checkpointer=checkpointer)
+    mermaid = graph.get_graph(xray=False).draw_mermaid()
+    Path("graph.mmd").write_text(mermaid)
+    print("Wrote graph.mmd")
+    # png = graph.get_graph(xray=False).draw_mermaid_png()
+    # Path("graph.png").write_bytes(png)
+    # print("Wrote graph.png")
+
+

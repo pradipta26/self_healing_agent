@@ -5,12 +5,24 @@ import uuid
 from datetime import datetime,  timezone
 import time
 from self_healing_agent.agent.graph import build_graph
-from self_healing_agent.agent.ingress.incident_lock import try_acquire_incident_workflow_lock
+from self_healing_agent.agent.ingress.incident_lock import (
+    try_acquire_incident_workflow_lock,
+    mark_incident_workflow_completed,
+    mark_incident_workflow_failed,
+)
 from self_healing_agent.core.models import IncidentPayload
 from self_healing_agent.agent.state import AgentState
 from self_healing_agent.config.config_loader import load_env_from_config
 from functools import lru_cache
 from langgraph.checkpoint.memory import InMemorySaver
+from self_healing_agent.clients.hawkeye_client import update_incident_status
+from self_healing_agent.observability.metrics import emit_counter, emit_histogram
+from self_healing_agent.observability.metrics_contract import (
+    AGENT_RUNS_STARTED,
+    AGENT_RUNS_COMPLETED,
+    AGENT_RUNS_FAILED,
+    AGENT_RUN_LATENCY_MS,
+)
 
 load_env_from_config("dev")
 
@@ -56,6 +68,11 @@ def run_incident(payload: IncidentPayload) -> dict[str, Any]:
         "decision_start_time_ms": start_time_ms,
         "timestamp_utc": now_utc
     }
+    emit_counter(
+        AGENT_RUNS_STARTED,
+        autonomy_mode=state["autonomy_mode"],
+        kill_switch_state=state["kill_switch_state"],
+    )
     # Add Ingress Idempotency Checkpoint
     lock = try_acquire_incident_workflow_lock(
         hawkeye_incident_id=he_incident_id,
@@ -87,6 +104,61 @@ def run_incident(payload: IncidentPayload) -> dict[str, Any]:
     graph = get_graph()
     config = {"configurable": {"thread_id": thread_id}}
     response = graph.invoke(state, config=config)
+
+    run_latency_ms = int(time.time() * 1000) - start_time_ms
+    emit_histogram(
+        AGENT_RUN_LATENCY_MS,
+        run_latency_ms,
+        autonomy_mode=state["autonomy_mode"],
+        kill_switch_state=state["kill_switch_state"],
+    )
+
+    if response.get("error_flag", False):
+        emit_counter(
+            AGENT_RUNS_FAILED,
+            autonomy_mode=state["autonomy_mode"],
+            kill_switch_state=state["kill_switch_state"],
+        )
+    else:
+        emit_counter(
+            AGENT_RUNS_COMPLETED,
+            autonomy_mode=state["autonomy_mode"],
+            kill_switch_state=state["kill_switch_state"],
+        )
+
+    decision_id = response.get("decision_id") or response.get("decision", {}).get("decision_id")
+    action_verification = response.get("action_verification_result", {}) or {}
+
+    try:
+        if response.get("error_flag", False):
+            mark_incident_workflow_failed(
+                hawkeye_incident_id=he_incident_id,
+                decision_id=decision_id,
+            )
+        else:
+            mark_incident_workflow_completed(
+                hawkeye_incident_id=he_incident_id,
+                decision_id=decision_id,
+            )
+    except Exception:
+        pass
+
+    try:
+        if action_verification.get("ok", False):
+            update_incident_status(
+                incident_id=he_incident_id,
+                status="CLOSED",
+                owner=thread_id,
+            )
+        else:
+            update_incident_status(
+                incident_id=he_incident_id,
+                status="OPEN",
+                owner=None,
+            )
+    except Exception:
+        pass
+
     return response
 
 

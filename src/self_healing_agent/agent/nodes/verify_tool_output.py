@@ -16,7 +16,7 @@ def verify_tool_output(state: AgentState) -> dict[str, Any]:
         tool_trigger_codes.append("TOOL_EXECUTION_FAILED")
         trace.append("verify_tool_output:tool_not_ok")
         return {
-            "verification_result": {
+            "tool_verification_result": {
                 "ok": False,
                 "details": {
                     "reason": "tool_not_ok",
@@ -35,7 +35,7 @@ def verify_tool_output(state: AgentState) -> dict[str, Any]:
         tool_trigger_codes.append("TOOL_OUTPUT_MALFORMED")
         trace.append("verify_tool_output:raw_missing_or_invalid")
         return {
-            "verification_result": {
+            "tool_verification_result": {
                 "ok": False,
                 "details": {
                     "reason": "raw_missing_or_invalid",
@@ -53,7 +53,7 @@ def verify_tool_output(state: AgentState) -> dict[str, Any]:
         tool_trigger_codes.append("TOOL_OUTPUT_MALFORMED")
         trace.append("verify_tool_output:message_missing")
         return {
-            "verification_result": {
+            "tool_verification_result": {
                 "ok": False,
                 "details": {
                     "reason": "message_missing",
