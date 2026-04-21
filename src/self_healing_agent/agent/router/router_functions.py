@@ -106,9 +106,8 @@ def persist_approval_response_event_router(state: AgentState):
 
     if status == "APPROVED":
         return "pre_execution_guard"
-    if status == "REJECTED":
-        return "build_investigation_request"
-    return "END"
+
+    return "build_investigation_request"
 
 
 def pre_execution_guard_router(state: AgentState):
@@ -122,33 +121,11 @@ def pre_execution_guard_router(state: AgentState):
     return "build_investigation_request"
 
 
-# def prepare_tool_call_router(state: AgentState):
-#     if state.get("error_flag", False):
-#         return "send_error_notification"
-
-#     return "execute_action"
-
-
-
-# def execute_action_router(state: AgentState):
-#     if state.get("error_flag", False):
-#         return "send_error_notification"
-
-#     tool_result = state.get("tool_result", {})
-#     if tool_result.get("ok"):
-#         return "validate_action_result"
-
-#     return "build_investigation_request"
-
-
-
-
-
 def prepare_tool_call_router(state: AgentState):
     if state.get("error_flag", False):
         return "send_error_notification"
 
-    return "execute_tool"
+    return "build_tool_execution_log_start"
 
 
 def execute_tool_router(state: AgentState):
@@ -158,6 +135,59 @@ def execute_tool_router(state: AgentState):
 
 
 def tool_retry_gate_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_tool_execution_log_finalize"
+
+
+def build_tool_execution_log_start_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_tool_execution_log_start"
+
+
+def persist_tool_execution_log_start_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_tool_execution_event"
+
+
+def build_tool_execution_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_lifecycle_event_tool_execution"
+
+
+def persist_lifecycle_event_tool_execution_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    lifecycle_event = state.get("lifecycle_event", {}) or {}
+    event_type = str(lifecycle_event.get("event_type", "")).strip().upper()
+
+    if event_type in {
+        "TOOL_EXECUTION_STARTED",
+        "TOOL_EXECUTION_RETRY_SCHEDULED",
+        "ROLLBACK_EXECUTION_STARTED",
+        "ROLLBACK_EXECUTION_RETRY_SCHEDULED",
+    }:
+        return "execute_tool"
+
+    return "verify_tool_output"
+
+
+def build_tool_execution_log_finalize_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_tool_execution_log_finalize"
+
+
+def persist_tool_execution_log_finalize_router(state: AgentState):
     if state.get("error_flag", False):
         return "send_error_notification"
 
@@ -178,24 +208,6 @@ def validate_action_result_router(state: AgentState):
     return "build_action_validation_event"
 
 
-def build_tool_execution_event_router(state: AgentState):
-    if state.get("error_flag", False):
-        return "send_error_notification"
-
-    return "persist_lifecycle_event_tool_execution"
-
-
-def persist_tool_execution_event_router(state: AgentState):
-    if state.get("error_flag", False):
-        return "send_error_notification"
-
-    decision = state.get("tool_retry_decision", "NO_RETRY")
-    if decision == "RETRY_TOOL":
-        return "execute_tool"
-
-    return "verify_tool_output"
-
-
 def build_tool_output_verification_event_router(state: AgentState):
     if state.get("error_flag", False):
         return "send_error_notification"
@@ -208,10 +220,14 @@ def persist_tool_output_verification_event_router(state: AgentState):
         return "send_error_notification"
 
     verification = state.get("tool_verification_result", {})
-    if verification.get("ok"):
-        return "validate_action_result"
+    if not verification.get("ok", False):
+        return "build_investigation_request"
 
-    return "build_investigation_request"
+    execution_phase = str(state.get("execution_phase", "FORWARD")).strip().upper()
+    if execution_phase == "ROLLBACK":
+        return "verify_rollback"
+
+    return "validate_action_result"
 
 
 def build_action_validation_event_router(state: AgentState):
@@ -227,6 +243,54 @@ def persist_action_validation_event_router(state: AgentState):
 
     action_validation = state.get("action_verification_result", {})
     if action_validation.get("ok"):
+        return "END"
+
+    return "rollback_or_investigation"
+
+
+def rollback_or_investigation_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    rollback_plan = state.get("rollback_plan", {}) or {}
+    rollback_status = str(rollback_plan.get("status", "SKIPPED")).strip().upper()
+    rollback_actions = rollback_plan.get("actions", []) or []
+
+    if rollback_status == "PLANNED" and rollback_actions:
+        return "prepare_rollback_tool_call"
+
+    return "build_investigation_request"
+
+
+def verify_rollback_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_rollback_verification_event"
+
+
+def prepare_rollback_tool_call_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "build_tool_execution_log_start"
+
+
+def build_rollback_verification_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    return "persist_lifecycle_event_rollback_verification"
+
+
+def persist_rollback_verification_event_router(state: AgentState):
+    if state.get("error_flag", False):
+        return "send_error_notification"
+
+    rollback_plan = state.get("rollback_plan", {}) or {}
+    rollback_status = str(rollback_plan.get("status", "FAILED")).strip().upper()
+
+    if rollback_status == "EXECUTED":
         return "END"
 
     return "build_investigation_request"
