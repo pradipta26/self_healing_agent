@@ -1,7 +1,7 @@
 from typing import Any
 
 from self_healing_agent.agent.state import AgentState
-from self_healing_agent.agent.tools.retry_classifier import classify_tool_failure
+from self_healing_agent.tools.retry_classifier import classify_tool_failure
 from self_healing_agent.observability.metrics import emit_counter
 from self_healing_agent.observability.metrics_contract import (
     TOOL_RETRY_RATE,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from self_healing_agent.agent.tools.registry import AVAILABLE_TOOL_FAMILIES
+from self_healing_agent.tools.registry import AVAILABLE_TOOL_FAMILIES
 from self_healing_agent.agent.state import (
     ActionPolicyDecision,
     BlastRadiusLevel,

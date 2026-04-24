@@ -10,7 +10,7 @@ from self_healing_agent.clients.hawkeye_client import (
     get_incident_runtime_status,
     claim_incident_if_open,
 )
-from self_healing_agent.agent.tools.preconditions import check_tool_preconditions
+from self_healing_agent.tools.preconditions import check_tool_preconditions
 
 
 APPROVAL_TTL_SECONDS = int(os.environ.get('HITL_APPROVAL_TTL_SECONDS') or 1800)
