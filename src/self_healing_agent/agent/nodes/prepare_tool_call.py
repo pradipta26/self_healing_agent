@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from self_healing_agent.agent.state import AgentState
-from self_healing_agent.agent.tools.registry import AVAILABLE_TOOL_FAMILIES
-from self_healing_agent.agent.tools.resolver import resolve_precondition
+from self_healing_agent.tools.registry import AVAILABLE_TOOL_FAMILIES
+from self_healing_agent.tools.resolver import resolve_precondition
 
 def prepare_tool_call(state: AgentState) -> dict[str, Any]:
     warnings = list(state.get("warnings", []))

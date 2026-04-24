@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from self_healing_agent.agent.state import AgentState
-from self_healing_agent.agent.tools.resolver import resolve_executor
+from self_healing_agent.tools.resolver import resolve_executor
 
 
 def execute_tool(state: AgentState) -> dict[str, Any]:

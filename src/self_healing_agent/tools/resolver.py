@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from self_healing_agent.agent.tools.mock_tools import mock_tool_execute
-from self_healing_agent.agent.tools.preconditions import (
+from self_healing_agent.tools.mock_tools import mock_tool_execute
+from self_healing_agent.tools.preconditions import (
     check_clear_cache_preconditions,
     check_restart_rollback_preconditions,
     check_restart_service_preconditions,
