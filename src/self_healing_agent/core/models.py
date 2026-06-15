@@ -8,6 +8,7 @@ def utc_now_string() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 class IncidentPayload(BaseModel):
+    ce_incident_id: str
     incident_details: str = Field(
         ...,
         description="Raw incident details received from the source system.",
