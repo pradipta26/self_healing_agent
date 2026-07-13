@@ -10,6 +10,7 @@ from self_healing_agent.agent.state import (
 
 
 def _normalize_text(value: str | None) -> str:
+    """Lowercase and clean text by removing punctuation and normalizing whitespace."""
     if not value:
         return ""
     text = value.lower().strip()
@@ -19,6 +20,7 @@ def _normalize_text(value: str | None) -> str:
 
 
 def _tokenize(value: str | None) -> set[str]:
+    """Convert text into meaningful tokens without common stop words."""
     text = _normalize_text(value)
     if not text:
         return set()
@@ -35,6 +37,7 @@ def _tokenize(value: str | None) -> set[str]:
 
 
 def _classify_action_family(text: str) -> str:
+    """Categorize text into a supported remediation action family."""
     text = _normalize_text(text)
 
     if any(term in text for term in ["restart", "restarted"]):
@@ -53,6 +56,7 @@ def _is_action_family_supported(
     step_action: str,
     cited_action_families: set[str],
 ) -> bool:
+    """Check whether a proposed action is compatible with the cited action families."""
     if step_action in cited_action_families:
         return True
 
@@ -73,6 +77,7 @@ def _has_minimum_token_overlap(
     evidence_texts: list[str],
     min_overlap: int = 2,
 ) -> bool:
+    """Check whether a claim and its evidence share enough meaningful tokens."""
     claim_tokens = _tokenize(claim)
     if not claim_tokens:
         return False
@@ -89,6 +94,7 @@ def _collect_used_evidence_doc_ids(
     evidence_ids: list[int],
     evidence_candidates: list[RetrievedDoc],
 ) -> list[str]:
+    """Map one-based evidence citations to their corresponding document IDs."""
     doc_ids: list[str] = []
 
     for evidence_id in evidence_ids:
@@ -106,6 +112,7 @@ def check_grounding(
     filtered_evidence: list[str],
     evidence_candidates: list[RetrievedDoc],
 ) -> GroundingCheckResult:
+    """Evaluate whether the model output is supported by its cited evidence."""
     notes: list[str] = []
     missing_claims: list[str] = []
 
